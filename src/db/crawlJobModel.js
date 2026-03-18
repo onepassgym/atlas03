@@ -35,7 +35,7 @@ const CrawlJobSchema = new mongoose.Schema({
   jobErrors:  [{ message: String, url: String, at: Date }],  // renamed from 'errors' (reserved)
   errorCount: { type: Number, default: 0 },
 
-  bullJobId: String,
+  queueJobId: String,
 
 }, { timestamps: true, collection: 'crawl_jobs' });
 

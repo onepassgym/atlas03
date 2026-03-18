@@ -4,7 +4,7 @@ const { body, param, query, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const router   = express.Router();
 
-const { addCityJob, addGymNameJob, getQueueStats, getBullJobStatus } = require('../queue/queues');
+const { addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus } = require('../queue/queues');
 const { FITNESS_CATEGORIES } = require('../scraper/googleMapsScraper');
 const CrawlJob = require('../db/crawlJobModel');
 const logger   = require('../utils/logger');
@@ -74,8 +74,8 @@ router.get('/status/:jobId', async (req, res) => {
   try {
     const db   = await CrawlJob.findOne({ jobId: req.params.jobId }).lean();
     if (!db) return err(res, 'Job not found', 404);
-    const bull = await getBullJobStatus(req.params.jobId);
-    ok(res, { job: { ...db, bull } });
+    const queueJob = await getQueueJobStatus(req.params.jobId);
+    ok(res, { job: { ...db, queueJob } });
   } catch (e) { err(res, e.message); }
 });
 

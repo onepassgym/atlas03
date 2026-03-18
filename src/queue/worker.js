@@ -1,7 +1,7 @@
 'use strict';
 require('dotenv').config();
 
-const { crawlQueue }  = require('./queues');
+const { Worker }      = require('bullmq');
 const { connectDB }   = require('../db/connection');
 const { BrowserManager, searchGymsInCity, scrapeGymDetail, FITNESS_CATEGORIES } = require('../scraper/googleMapsScraper');
 const { processGym }  = require('../scraper/gymProcessor');
@@ -14,6 +14,12 @@ const DELAY_MIN   = cfg.scraper.delayMin;
 const DELAY_MAX   = cfg.scraper.delayMax;
 const MAX_RETRIES = cfg.scraper.maxRetries;
 
+const connection = {
+  host:     cfg.redis.host,
+  port:     cfg.redis.port,
+  password: cfg.redis.password,
+};
+
 function sleep(min, max) {
   return new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
 }
@@ -22,14 +28,22 @@ async function updateJob(jobId, update) {
   try { await CrawlJob.findOneAndUpdate({ jobId }, update); } catch (_) {}
 }
 
+const workerProcessor = async (job) => {
+  if (job.name === 'city-crawl') {
+    return await cityCrawlProcessor(job);
+  } else if (job.name === 'gym-name-crawl') {
+    return await gymNameCrawlProcessor(job);
+  }
+};
+
 // ── City Crawl Worker ─────────────────────────────────────────────────────────
 
-crawlQueue.process('city-crawl', CONCURRENCY, async (job) => {
+async function cityCrawlProcessor(job) {
   const { jobId, input } = job.data;
   const { cityName, categories = FITNESS_CATEGORIES } = input;
 
   await connectDB();
-  await updateJob(jobId, { status: 'running', startedAt: new Date(), bullJobId: String(job.id) });
+  await updateJob(jobId, { status: 'running', startedAt: new Date(), queueJobId: String(job.id) });
 
   const browser  = new BrowserManager();
   const stats    = { created: 0, updated: 0, skipped: 0, failed: 0 };
@@ -47,7 +61,7 @@ crawlQueue.process('city-crawl', CONCURRENCY, async (job) => {
       try {
         const urls = await searchGymsInCity(page, cityName, categories[ci]);
         urls.forEach(u => allUrls.add(u));
-        job.progress(Math.floor(((ci + 1) / categories.length) * 25)); // 0–25% = discovery
+        await job.updateProgress(Math.floor(((ci + 1) / categories.length) * 25)); // 0–25% = discovery
         await sleep(DELAY_MIN, DELAY_MAX);
       } catch (err) {
         logger.warn(`Category "${categories[ci]}" failed: ${err.message}`);
@@ -63,7 +77,7 @@ crawlQueue.process('city-crawl', CONCURRENCY, async (job) => {
     let i = 0;
     for (const url of allUrls) {
       i++;
-      job.progress(25 + Math.floor((i / total) * 75)); // 25–100%
+      await job.updateProgress(25 + Math.floor((i / total) * 75)); // 25–100%
 
       let scraped = null;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -106,16 +120,16 @@ crawlQueue.process('city-crawl', CONCURRENCY, async (job) => {
     logger.error(`💥 City job FAILED [${cityName}]: ${err.message}`);
     throw err;
   }
-});
+}
 
 // ── Gym Name Crawl Worker ─────────────────────────────────────────────────────
 
-crawlQueue.process('gym-name-crawl', CONCURRENCY, async (job) => {
+async function gymNameCrawlProcessor(job) {
   const { jobId, input } = job.data;
   const { gymName } = input;
 
   await connectDB();
-  await updateJob(jobId, { status: 'running', startedAt: new Date(), bullJobId: String(job.id) });
+  await updateJob(jobId, { status: 'running', startedAt: new Date(), queueJobId: String(job.id) });
 
   const browser = new BrowserManager();
   const stats   = { created: 0, updated: 0, failed: 0 };
@@ -124,16 +138,16 @@ crawlQueue.process('gym-name-crawl', CONCURRENCY, async (job) => {
     await browser.launch();
     const page = await browser.newPage();
 
-    job.progress(10);
+    await job.updateProgress(10);
     const urls = await searchGymsInCity(page, gymName, '');
-    job.progress(40);
+    await job.updateProgress(40);
 
     await updateJob(jobId, { 'progress.total': urls.length });
 
     let i = 0;
     for (const url of urls.slice(0, 15)) {
       i++;
-      job.progress(40 + Math.floor((i / Math.min(urls.length, 15)) * 60));
+      await job.updateProgress(40 + Math.floor((i / Math.min(urls.length, 15)) * 60));
       try {
         const scraped = await scrapeGymDetail(page, url);
         if (!scraped?.name) continue;
@@ -156,6 +170,14 @@ crawlQueue.process('gym-name-crawl', CONCURRENCY, async (job) => {
     await updateJob(jobId, { status: 'failed', completedAt: new Date() });
     throw err;
   }
+}
+
+const worker = new Worker('atlas05:crawl', workerProcessor, {
+  connection,
+  concurrency: CONCURRENCY,
 });
+
+worker.on('failed', (job, err) => logger.error(`[atlas05:crawl] Job ${job.id} failed: ${err.message}`));
+worker.on('error', err => logger.error(`[atlas05:crawl] Worker error: ${err.message}`));
 
 logger.info(`\n🚀 Atlas05 Worker started  [concurrency: ${CONCURRENCY}]`);
