@@ -22,6 +22,8 @@ const logger          = require('./utils/logger');
 const { FITNESS_CATEGORIES } = require('./scraper/googleMapsScraper');
 
 const app = express();
+app.set('trust proxy', 1); // Enable trusting proxy headers for rate limiting
+
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(helmet());

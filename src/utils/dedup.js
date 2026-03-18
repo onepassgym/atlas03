@@ -30,24 +30,27 @@ async function findDuplicate({ placeId, name, lat, lng, address }) {
     if (found) return { gym: found, confidence: 'high', method: 'placeId' };
   }
 
-  // 2. Spatial proximity + name similarity
+  // 2. Spatial proximity ($nearSphere) + name similarity
   if (lat && lng) {
-    const delta = 0.001; // ~111m
     const nearby = await Gym.find({
-      lat: { $gte: lat - delta, $lte: lat + delta },
-      lng: { $gte: lng - delta, $lte: lng + delta },
-    }).limit(20).lean();
+      geoLocation: {
+        $nearSphere: {
+          $geometry: { type: 'Point', coordinates: [lng, lat] },
+          $maxDistance: RADIUS,
+        }
+      }
+    }).limit(10).lean();
 
     for (const c of nearby) {
+      if (!c.lat || !c.lng) continue;
       const dist = getDistance(
         { latitude: lat,    longitude: lng },
         { latitude: c.lat,  longitude: c.lng }
       );
-      if (dist <= RADIUS) {
-        const sim = jaccardSim(name, c.name);
-        if (sim >= 0.45) {
-          return { gym: c, confidence: dist < 15 ? 'high' : 'medium', method: 'latLng+name', dist, sim };
-        }
+      
+      const sim = jaccardSim(name, c.name);
+      if (sim >= 0.45) {
+        return { gym: c, confidence: dist < 15 ? 'high' : 'medium', method: 'geoNear+name', dist, sim };
       }
     }
   }
