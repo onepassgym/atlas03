@@ -24,7 +24,7 @@ function makeQueue(name, jobOpts = {}) {
   return q;
 }
 
-const crawlQueue = makeQueue('atlas05:crawl');
+const crawlQueue = makeQueue('atlas05-crawl');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

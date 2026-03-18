@@ -172,12 +172,12 @@ async function gymNameCrawlProcessor(job) {
   }
 }
 
-const worker = new Worker('atlas05:crawl', workerProcessor, {
+const worker = new Worker('atlas05-crawl', workerProcessor, {
   connection,
   concurrency: CONCURRENCY,
 });
 
-worker.on('failed', (job, err) => logger.error(`[atlas05:crawl] Job ${job.id} failed: ${err.message}`));
-worker.on('error', err => logger.error(`[atlas05:crawl] Worker error: ${err.message}`));
+worker.on('failed', (job, err) => logger.error(`[atlas05-crawl] Job ${job.id} failed: ${err.message}`));
+worker.on('error', err => logger.error(`[atlas05-crawl] Worker error: ${err.message}`));
 
 logger.info(`\n🚀 Atlas05 Worker started  [concurrency: ${CONCURRENCY}]`);
