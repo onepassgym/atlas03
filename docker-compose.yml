@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
 
   api:
@@ -10,7 +8,7 @@ services:
       - "8747:8747"
     env_file: .env
     environment:
-      - MONGODB_URI=mongodb://root:F%40khruddin10@147.79.71.238:27017/atlas?authSource=admin
+      - MONGODB_URI=mongodb://mongo:27017/atlas05
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     volumes:
@@ -33,9 +31,9 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      - MONGODB_URI=mongodb://mongo:27327/atlas05
+      - MONGODB_URI=mongodb://mongo:27017/atlas05
       - REDIS_HOST=redis
-      - REDIS_PORT=6847
+      - REDIS_PORT=6379
     volumes:
       - ./media:/app/media
       - ./logs:/app/logs
@@ -50,7 +48,7 @@ services:
     container_name: atlas05-mongo
     restart: unless-stopped
     ports:
-      - "27327:27017" # external 27327 → internal 27017
+      - "27327:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -65,7 +63,7 @@ services:
     container_name: atlas05-redis
     restart: unless-stopped
     ports:
-      - "6847:6379" # external 6847 → internal 6379
+      - "6847:6379"
     volumes:
       - redis_data:/data
     command: redis-server --save 60 1 --loglevel warning
