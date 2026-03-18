@@ -1,0 +1,9 @@
+node_modules/
+.env
+logs/
+media/photos/
+media/thumbnails/
+media/videos/
+gyms-export.json
+*.log
+.DS_Store

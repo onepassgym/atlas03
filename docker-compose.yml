@@ -1,0 +1,85 @@
+version: '3.9'
+
+services:
+
+  api:
+    build: .
+    container_name: atlas05-api
+    restart: unless-stopped
+    ports:
+      - "8747:8747"
+    env_file: .env
+    environment:
+      - MONGODB_URI=mongodb://mongo:27327/atlas05
+      - REDIS_HOST=redis
+      - REDIS_PORT=6847
+    volumes:
+      - ./media:/app/media
+      - ./logs:/app/logs
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [opg]
+    command: node src/server.js
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8747/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    build: .
+    container_name: atlas05-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MONGODB_URI=mongodb://mongo:27327/atlas05
+      - REDIS_HOST=redis
+      - REDIS_PORT=6847
+    volumes:
+      - ./media:/app/media
+      - ./logs:/app/logs
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [opg]
+    command: node src/queue/worker.js
+
+  mongo:
+    image: mongo:7.0
+    container_name: atlas05-mongo
+    restart: unless-stopped
+    ports:
+      - "27327:27017"          # external 27327 → internal 27017
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [opg]
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: atlas05-redis
+    restart: unless-stopped
+    ports:
+      - "6847:6379"            # external 6847 → internal 6379
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [opg]
+
+volumes:
+  mongo_data:
+  redis_data:
+
+networks:
+  opg:
+    driver: bridge

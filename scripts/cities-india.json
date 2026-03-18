@@ -1,0 +1,22 @@
+[
+  { "city": "Mumbai, Maharashtra, India" },
+  { "city": "Delhi, India" },
+  { "city": "Bangalore, Karnataka, India" },
+  { "city": "Hyderabad, Telangana, India" },
+  { "city": "Chennai, Tamil Nadu, India" },
+  { "city": "Pune, Maharashtra, India" },
+  { "city": "Kolkata, West Bengal, India" },
+  { "city": "Ahmedabad, Gujarat, India" },
+  { "city": "Jaipur, Rajasthan, India" },
+  { "city": "Surat, Gujarat, India" },
+  { "city": "Lucknow, Uttar Pradesh, India" },
+  { "city": "Chandigarh, India" },
+  { "city": "Kochi, Kerala, India" },
+  { "city": "Indore, Madhya Pradesh, India" },
+  { "city": "Nagpur, Maharashtra, India" },
+  { "city": "Gurgaon, Haryana, India" },
+  { "city": "Noida, Uttar Pradesh, India" },
+  { "city": "Vadodara, Gujarat, India" },
+  { "city": "Bhopal, Madhya Pradesh, India" },
+  { "city": "Patna, Bihar, India" }
+]
