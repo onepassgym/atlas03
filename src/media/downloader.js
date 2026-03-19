@@ -66,10 +66,16 @@ async function downloadImage(url, gymSlug = 'gym') {
 
 async function downloadAllMedia(photoUrls = [], gymSlug = 'gym') {
   if (!photoUrls.length) return [];
-  const { default: pLimit } = await import('p-limit');
-  const limit = pLimit(4); // 4 parallel downloads
 
-  const results = await Promise.all(photoUrls.map(url => limit(() => downloadImage(url, gymSlug))));
+  // Simple inline concurrency limiter — no ESM/CJS issues
+  const CONCURRENCY = 4;
+  const results = [];
+  for (let i = 0; i < photoUrls.length; i += CONCURRENCY) {
+    const batch = photoUrls.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.all(batch.map(url => downloadImage(url, gymSlug)));
+    results.push(...batchResults);
+  }
+
   const ok  = results.filter(r => r?.localPath).length;
   const bad = results.filter(r => !r?.localPath).length;
   if (bad > 0) logger.warn(`Media [${gymSlug}]: ${ok} ok, ${bad} failed`);

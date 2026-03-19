@@ -33,8 +33,10 @@ class BrowserManager {
   constructor() { this.browser = null; this.ctx = null; }
 
   async launch() {
+    const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined;
     this.browser = await chromium.launch({
       headless: cfg.scraper.headless,
+      executablePath,
       args: [
         '--no-sandbox', '--disable-setuid-sandbox',
         '--disable-dev-shm-usage', '--disable-gpu',
