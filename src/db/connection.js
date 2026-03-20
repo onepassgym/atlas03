@@ -1,7 +1,8 @@
 'use strict';
 const mongoose = require('mongoose');
-const cfg    = require('../../config');
-const logger = require('../utils/logger');
+const cfg            = require('../../config');
+const logger         = require('../utils/logger');
+const { ensureIndexes } = require('./ensureIndexes');
 
 let connected = false;
 
@@ -20,6 +21,13 @@ async function connectDB() {
     await mongoose.connect(cfg.mongo.uri, opts);
     connected = true;
     logger.info(`✅ MongoDB connected → ${cfg.mongo.dbName}`);
+
+    // Ensure all required indexes exist (idempotent)
+    try {
+      await ensureIndexes();
+    } catch (idxErr) {
+      logger.warn(`⚠️  Index creation warning (non-fatal): ${idxErr.message}`);
+    }
   } catch (err) {
     logger.error('❌ MongoDB connection failed: ' + err.message);
     logger.error('👉 Fix options:');

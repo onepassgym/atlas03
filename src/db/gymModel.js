@@ -82,7 +82,8 @@ const GymSchema = new mongoose.Schema({
   types:       [String],
 
   // Location
-  geoLocation: { type: GeoPointSchema },   // 2dsphere index declared below
+  geoLocation: { type: GeoPointSchema },   // legacy 2dsphere field (kept for compat)
+  location:    { type: GeoPointSchema },   // canonical GeoJSON field (2dsphere indexed)
   lat:         Number,
   lng:         Number,
   address:     String,
@@ -160,8 +161,11 @@ const GymSchema = new mongoose.Schema({
 
 // ── Indexes (declared once, no duplicates) ────────────────────────────────────
 
-GymSchema.index({ geoLocation: '2dsphere' });
-GymSchema.index({ placeId: 1 }, { unique: true, sparse: true });
+GymSchema.index({ geoLocation: '2dsphere' });                              // legacy
+GymSchema.index({ location:    '2dsphere' }, { sparse: true });            // canonical
+GymSchema.index({ slug:        1 },         { unique: true, sparse: true });
+GymSchema.index({ googleMapsUrl: 1 });
+GymSchema.index({ placeId:     1 },         { sparse: true });             // non-unique (ensureIndexes handles uniqueness via native driver)
 GymSchema.index({ lat: 1, lng: 1 });
 GymSchema.index({ name: 'text', description: 'text', areaName: 'text' });
 GymSchema.index({ areaName: 1, category: 1 });
