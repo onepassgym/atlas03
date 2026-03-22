@@ -156,6 +156,19 @@ curl -X POST http://localhost:8747/api/crawl/batch \
 curl http://localhost:8747/api/crawl/status/<jobId>
 ```
 
+### Clear the queue (instantly)
+
+```bash
+curl -X POST http://localhost:8747/api/crawl/queue/clear
+```
+*Note: This obliterates the Redis queue and marks all currently 'queued' or 'running' jobs in the DB as 'failed'.*
+
+### Check queue stats
+
+```bash
+curl http://localhost:8747/api/crawl/queue/stats
+```
+
 ### Query scraped gyms
 
 ```bash
@@ -170,6 +183,19 @@ curl "http://localhost:8747/api/gyms/<mongoId>"
 
 # DB stats
 curl "http://localhost:8747/api/gyms/stats"
+```
+
+### Check Logs
+
+```bash
+# List all available log files
+curl "http://localhost:8747/api/system/logs"
+
+# Tail the latest app log (last 100 lines)
+curl "http://localhost:8747/api/system/logs/latest"
+
+# Tail a specific file
+curl "http://localhost:8747/api/system/logs?file=app-2026-03-21.log&tail=200"
 ```
 
 ### Utility scripts
@@ -229,13 +255,21 @@ gym · fitness center · yoga studio · crossfit · pilates studio · martial ar
 
 ---
 
-## Duplicate Detection (3-tier)
+## Duplicate Detection & Smart Upsert (5-tier)
 
-1. **placeId match** — exact Google Place ID → highest confidence
-2. **lat/lng within 50m + name similarity ≥ 45%** → medium/high confidence
-3. **exact name + partial address** → medium confidence
+1. **slug match** — exact URL slug match → highest confidence
+2. **googleMapsUrl match** — exact URL match → high confidence
+3. **placeId match** — exact Google Place ID → high confidence
+4. **lat/lng within 50m + name similarity ≥ 45%** → medium/high confidence
+5. **exact name + partial address** → medium confidence
 
-On duplicate → only **missing fields** are filled. Reviews updated only if newer count is higher. New photos appended (no duplicates).
+### Smart Update Logic
+When a duplicate is found (on re-running the same city queue):
+- **Reviews — MERGE**: Fresh reviews are compared against existing ones (by `reviewId`). Only brand new reviews are added to the separate `reviews` collection.
+- **Tracked Fields — DIFF**: Changes to `name`, `address`, and `contact` (phone, website, email) are logged to the `gymChangeLogs` collection.
+- **Safe Overwrite — REFRESH**: Dynamic fields like `rating`, `openingHours`, `isOpenNow`, and `photos` are always updated from the latest crawl.
+- **crawlMeta**: `lastCrawledAt` and `crawlVersion` are updated, but `firstCrawledAt` is preserved.
+- **GeoJSON**: `location` field is automatically rebuilt from the latest lat/lng.
 
 ---
 

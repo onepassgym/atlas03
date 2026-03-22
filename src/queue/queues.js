@@ -66,10 +66,15 @@ async function getQueueJobStatus(jobId) {
     return { 
       id: job.id, 
       state: await job.getState(), 
-      progress: job.progress, // In BullMQ, progress is a property or value, not necessarily a function return? Actually, it's just job.progress in BullMQ
+      progress: job.progress, 
       failedReason: job.failedReason 
     };
   } catch (_) { return null; }
 }
 
-module.exports = { crawlQueue, addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus, getBullJobStatus: getQueueJobStatus };
+async function clearCrawlQueue() {
+  await crawlQueue.pause();
+  await crawlQueue.obliterate({ force: true });
+}
+
+module.exports = { crawlQueue, addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus, getBullJobStatus: getQueueJobStatus, clearCrawlQueue };

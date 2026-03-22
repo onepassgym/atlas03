@@ -15,6 +15,7 @@ const { v4: uuidv4 } = require('uuid');
 const { connectDB }   = require('./db/connection');
 const crawlRoutes     = require('./api/crawlRoutes');
 const gymRoutes       = require('./api/gymRoutes');
+const systemRoutes    = require('./api/systemRoutes');
 const { addCityJob }  = require('./queue/queues');
 const CrawlJob        = require('./db/crawlJobModel');
 const cfg             = require('../config');
@@ -47,8 +48,9 @@ fs.mkdirSync(mediaPath, { recursive: true });
 app.use('/media', express.static(mediaPath, { maxAge: '7d' }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/crawl', crawlRoutes);
-app.use('/api/gyms',  gymRoutes);
+app.use('/api/crawl',  crawlRoutes);
+app.use('/api/gyms',   gymRoutes);
+app.use('/api/system', systemRoutes);
 
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({
@@ -78,6 +80,8 @@ app.get('/', (_, res) => res.json({
     'GET  /api/gyms/stats':          'DB statistics',
     'GET  /api/gyms/:id':            'Full gym detail',
     'PATCH /api/gyms/:id':           'Update platform fields',
+    'GET  /api/system/logs':         'List/view all log files',
+    'GET  /api/system/logs/latest':  'Tail latest app log'
   },
 }));
 
