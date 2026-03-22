@@ -7,7 +7,7 @@ module.exports = {
     env:  process.env.NODE_ENV || 'development',
   },
   mongo: {
-    uri:    process.env.MONGODB_URI     || 'mongodb://127.0.0.1:27017/atlas05',
+    uri:    process.env.MONGODB_URI     || 'mongodb://127.0.0.1:27328/atlas05',
     dbName: process.env.MONGODB_DB_NAME || 'atlas05',
   },
   redis: {

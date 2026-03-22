@@ -1,6 +1,13 @@
 'use strict';
 const mongoose = require('mongoose');
 
+// Register related models for population
+require('./categoryModel');
+require('./amenityModel');
+require('./reviewModel');
+require('./photoModel');
+require('./crawlMetaModel');
+
 // ── Sub-schemas ───────────────────────────────────────────────────────────────
 
 const GeoPointSchema = new mongoose.Schema({
@@ -16,54 +23,13 @@ const HoursSchema = new mongoose.Schema({
   isClosed: { type: Boolean, default: false },
 }, { _id: false });
 
-const ReviewSchema = new mongoose.Schema({
-  reviewId:    String,
-  authorName:  String,
-  authorUrl:   String,
-  authorAvatar:String,
-  rating:      { type: Number, min: 1, max: 5 },
-  text:        String,
-  language:    String,
-  photos:      [String],
-  publishedAt: String,
-  likes:       { type: Number, default: 0 },
-  ownerReply:  {
-    text:        String,
-    publishedAt: String,
-  },
-}, { _id: false });
-
-const MediaSchema = new mongoose.Schema({
-  originalUrl:   String,
-  localPath:     String,
-  publicUrl:     String,
-  thumbnailUrl:  String,
-  type:          { type: String, enum: ['photo', 'video', 'thumbnail', 'cover'] },
-  caption:       String,
-  width:         Number,
-  height:        Number,
-  sizeBytes:     Number,
-  downloadedAt:  Date,
-  downloadError: String,
-}, { _id: false });
-
 const ContactSchema = new mongoose.Schema({
   phone:   String,
   website: String,
   email:   String,
 }, { _id: false });
 
-const CrawlMetaSchema = new mongoose.Schema({
-  firstCrawledAt:   Date,
-  lastCrawledAt:    Date,
-  crawlStatus:      { type: String, enum: ['pending','in_progress','completed','failed','partial'], default: 'pending' },
-  crawlVersion:     { type: Number, default: 1 },
-  crawlError:       String,
-  missingFields:    [String],
-  dataCompleteness: { type: Number, default: 0 }, // 0–100
-  sourceUrl:        String,
-  jobId:            String,
-}, { _id: false });
+// (Legacy Schema omitted array embedded objects like reviews/photos to save space - they are now separate models)
 
 // ── Main Schema ───────────────────────────────────────────────────────────────
 
@@ -75,7 +41,10 @@ const GymSchema = new mongoose.Schema({
   slug:          String,
   aliases:       [String],
 
-  // Category
+  // Category Normalized Links
+  categoryId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
+  
+  // Legacy / Unnormalized references
   category:    { type: String, default: 'fitness_venue' },
   categories:  [String],
   primaryType: String,
@@ -111,8 +80,7 @@ const GymSchema = new mongoose.Schema({
     oneStar:   { type: Number, default: 0 },
   },
 
-  // Reviews
-  reviews:        [ReviewSchema],
+  // Stats
   reviewsScraped: { type: Number, default: 0 },
 
   // Hours
@@ -120,16 +88,19 @@ const GymSchema = new mongoose.Schema({
   isOpenNow:    Boolean,
   popularTimes: mongoose.Schema.Types.Mixed,
 
-  // Media
-  coverPhoto: MediaSchema,
-  photos:     [MediaSchema],
-  videos:     [MediaSchema],
+  // Merged Cover Media fields
+  coverPhoto: {
+    publicUrl: String,
+    thumbnailUrl: String,
+    width: Number,
+    height: Number
+  },
   totalPhotos: { type: Number, default: 0 },
 
   // Details
   description:    String,
   priceLevel:     String,
-  amenities:      { raw: [String] },
+  amenityIds:     [{ type: mongoose.Schema.Types.ObjectId, ref: 'Amenity' }],
   highlights:     [String],
   offerings:      [String],
   serviceOptions: [String],
@@ -150,14 +121,40 @@ const GymSchema = new mongoose.Schema({
     planIds:    [String],
   },
 
-  // Crawl metadata
-  crawlMeta: CrawlMetaSchema,
-
   // Job reference
   areaName:   String,
   crawlJobId: String,
 
-}, { timestamps: true, collection: 'gyms' });
+  // Data Pipeline
+  parsed:    { type: Boolean, default: false },
+
+}, { 
+  timestamps: true, 
+  collection: 'gyms',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// ── Virtuals ──────────────────────────────────────────────────────────────────
+
+GymSchema.virtual('reviews', {
+  ref: 'Review',
+  localField: '_id',
+  foreignField: 'gymId'
+});
+
+GymSchema.virtual('photos', {
+  ref: 'Photo',
+  localField: '_id',
+  foreignField: 'gymId'
+});
+
+GymSchema.virtual('crawlMeta', {
+  ref: 'CrawlMeta',
+  localField: '_id',
+  foreignField: 'gymId',
+  justOne: true
+});
 
 // ── Indexes (declared once, no duplicates) ────────────────────────────────────
 

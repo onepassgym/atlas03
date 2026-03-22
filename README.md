@@ -66,7 +66,7 @@ won't clash with other things you're running:
 | Service | Port | Avoids |
 |---------|------|--------|
 | API | **8747** | 3000, 8000, 8080 |
-| MongoDB | **27327** | 27017 |
+| MongoDB | **27328** | 27017 |
 | Redis | **6847** | 6379 |
 
 Edit `.env` only if you need to point at Atlas or a remote Redis.
@@ -75,7 +75,7 @@ Edit `.env` only if you need to point at Atlas or a remote Redis.
 
 ```bash
 # MongoDB on port 27327
-docker run -d -p 27327:27017 --name opg-mongo mongo:7.0
+docker run -d -p 27328:27017 --name opg-mongo mongo:7.0
 
 # Redis on port 6847
 docker run -d -p 6847:6379 --name opg-redis redis:7.2-alpine

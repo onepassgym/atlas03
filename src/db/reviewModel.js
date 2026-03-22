@@ -63,7 +63,7 @@ const ReviewSchema = new mongoose.Schema(
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: false },
-    collection: 'reviews',
+    collection: 'gym_reviews',
   }
 );
 
