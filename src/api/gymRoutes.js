@@ -26,7 +26,14 @@ router.get('/',
     if (search)    filter.$text    = { $search: search };
     try {
       const [gyms, total] = await Promise.all([
-        Gym.find(filter).select('-reviews -photos.localPath').sort({ [sortBy]: order === 'asc' ? 1 : -1 }).limit(+limit).skip((+page - 1) * +limit).lean(),
+        Gym.find(filter)
+           .select('-crawlMeta')
+           .populate('categoryId', 'slug label')
+           .populate('amenityIds', 'slug label icon')
+           .sort({ [sortBy]: order === 'asc' ? 1 : -1 })
+           .limit(+limit)
+           .skip((+page - 1) * +limit)
+           .lean(),
         Gym.countDocuments(filter),
       ]);
       ok(res, { total, page: +page, limit: +limit, pages: Math.ceil(total / +limit), gyms });
@@ -48,7 +55,11 @@ router.get('/nearby',
     };
     if (category) filter.category = category;
     try {
-      const gyms = await Gym.find(filter).limit(+limit).select('-reviews -photos.localPath').lean();
+      const gyms = await Gym.find(filter)
+        .limit(+limit)
+        .populate('categoryId', 'slug label')
+        .populate('amenityIds', 'slug label icon')
+        .lean();
       ok(res, { count: gyms.length, gyms });
     } catch (e) { err(res, e.message); }
   }
@@ -59,7 +70,13 @@ router.get('/stats', async (_, res) => {
   try {
     const [total, byCategory, topCities, avgRating] = await Promise.all([
       Gym.countDocuments(),
-      Gym.aggregate([{ $group: { _id: '$category', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+      Gym.aggregate([
+        { $group: { _id: '$categoryId', count: { $sum: 1 } } },
+        { $lookup: { from: 'gym_categories', localField: '_id', foreignField: '_id', as: 'cat' } },
+        { $unwind: { path: '$cat', preserveNullAndEmptyArrays: true } },
+        { $project: { _id: { $ifNull: ['$cat.label', 'Unknown'] }, count: 1 } },
+        { $sort: { count: -1 } }
+      ]),
       Gym.aggregate([{ $group: { _id: '$areaName', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }]),
       Gym.aggregate([{ $match: { rating: { $gt: 0 } } }, { $group: { _id: null, avg: { $avg: '$rating' } } }]),
     ]);
@@ -71,7 +88,14 @@ router.get('/stats', async (_, res) => {
 router.get('/:id', param('id').isMongoId(), async (req, res) => {
   if (validate(req, res)) return;
   try {
-    const gym = await Gym.findById(req.params.id).lean();
+    const gym = await Gym.findById(req.params.id)
+      .populate('categoryId', 'slug label description')
+      .populate('amenityIds', 'slug label icon')
+      .populate('reviews')
+      .populate('photos', '-localPath')
+      .populate('crawlMeta')
+      .lean({ virtuals: true });
+    
     if (!gym) return err(res, 'Gym not found', 404);
     ok(res, { gym });
   } catch (e) { err(res, e.message); }

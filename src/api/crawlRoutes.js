@@ -4,7 +4,7 @@ const { body, param, query, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const router   = express.Router();
 
-const { addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus } = require('../queue/queues');
+const { addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus, clearCrawlQueue } = require('../queue/queues');
 const { FITNESS_CATEGORIES } = require('../scraper/googleMapsScraper');
 const CrawlJob = require('../db/crawlJobModel');
 const logger   = require('../utils/logger');
@@ -102,6 +102,16 @@ router.get('/jobs',
 router.get('/queue/stats', async (req, res) => {
   try { ok(res, { queue: await getQueueStats() }); }
   catch (e) { err(res, e.message); }
+});
+
+// POST /api/crawl/queue/clear
+router.post('/queue/clear', async (req, res) => {
+  try {
+    await clearCrawlQueue();
+    // Also reset any 'queued' or 'running' jobs in the DB to 'failed'
+    await CrawlJob.updateMany({ status: { $in: ['queued', 'running'] } }, { status: 'failed', completedAt: new Date() });
+    ok(res, { message: 'Queue obliterated and pending DB jobs set to failed' });
+  } catch (e) { err(res, e.message); }
 });
 
 // GET /api/crawl/categories

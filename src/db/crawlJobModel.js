@@ -37,7 +37,7 @@ const CrawlJobSchema = new mongoose.Schema({
 
   queueJobId: String,
 
-}, { timestamps: true, collection: 'crawl_jobs' });
+}, { timestamps: true, collection: 'gym_crawl_jobs' });
 
 CrawlJobSchema.index({ status: 1 });
 CrawlJobSchema.index({ createdAt: -1 });

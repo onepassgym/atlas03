@@ -1,7 +1,8 @@
 'use strict';
 const mongoose = require('mongoose');
-const cfg    = require('../../config');
-const logger = require('../utils/logger');
+const cfg            = require('../../config');
+const logger         = require('../utils/logger');
+const { ensureIndexes } = require('./ensureIndexes');
 
 let connected = false;
 
@@ -20,11 +21,18 @@ async function connectDB() {
     await mongoose.connect(cfg.mongo.uri, opts);
     connected = true;
     logger.info(`✅ MongoDB connected → ${cfg.mongo.dbName}`);
+
+    // Ensure all required indexes exist (idempotent)
+    try {
+      await ensureIndexes();
+    } catch (idxErr) {
+      logger.warn(`⚠️  Index creation warning (non-fatal): ${idxErr.message}`);
+    }
   } catch (err) {
     logger.error('❌ MongoDB connection failed: ' + err.message);
     logger.error('👉 Fix options:');
     logger.error('   1. Local:  make sure mongod is running  →  sudo systemctl start mongod  (Linux)  /  brew services start mongodb-community  (Mac)');
-    logger.error('   2. Docker: docker run -d -p 27017:27017 --name mongo mongo:7.0');
+    logger.error('   2. Docker: docker run -d -p 27328:27017 --name mongo mongo:7.0');
     logger.error('   3. Atlas:  set MONGODB_URI=mongodb+srv://... in .env');
     process.exit(1);
   }

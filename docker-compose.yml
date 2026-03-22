@@ -48,7 +48,7 @@ services:
     container_name: atlas05-mongo
     restart: unless-stopped
     ports:
-      - "27327:27017"
+      - "27328:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
