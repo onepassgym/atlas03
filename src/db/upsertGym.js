@@ -19,8 +19,14 @@
 
 const Gym          = require('./gymModel');
 const { Review, buildReviewDocs } = require('./reviewModel');
+const Photo          = require('./photoModel');
+const CrawlMeta      = require('./crawlMetaModel');
+const Category       = require('./categoryModel');
+const Amenity        = require('./amenityModel');
+const PlaceType      = require('./placeTypeModel');
 const GymChangeLog = require('./gymChangeLogModel');
 const logger       = require('../utils/logger');
+const slugify      = require('slugify');
 
 // ── Fields that we always overwrite with fresh crawl data ─────────────────────
 const SAFE_OVERWRITE_FIELDS = [
@@ -38,6 +44,105 @@ const TRACKED_FIELDS = ['name', 'address'];
 // ── Deep equality check (good enough for our field types) ─────────────────────
 function equal(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function slugifyValue(str) {
+  if (!str) return null;
+  return str.toString().toLowerCase().trim().replace(/[\s\W-]+/g, '-');
+}
+
+// ── Resolve Normalized References ─────────────────────────────────────────────
+
+async function resolveCategory(rawLabel) {
+  if (!rawLabel) return null;
+  const slug = slugifyValue(rawLabel);
+  const cat = await Category.findOneAndUpdate(
+    { slug },
+    { $setOnInsert: { slug, label: rawLabel } },
+    { upsert: true, new: true, runValidators: true }
+  );
+  return cat._id;
+}
+
+async function resolvePlaceType(rawLabel) {
+  if (!rawLabel) return null;
+  const slug = slugifyValue(rawLabel);
+  await PlaceType.updateOne(
+    { slug },
+    { $setOnInsert: { slug, label: rawLabel, googleType: rawLabel } },
+    { upsert: true }
+  );
+  return null;
+}
+
+async function resolveAmenities(rawLabels = []) {
+  if (!Array.isArray(rawLabels) || !rawLabels.length) return [];
+  const ids = [];
+  for (const label of rawLabels) {
+    const slug = slugifyValue(label);
+    const am = await Amenity.findOneAndUpdate(
+      { slug },
+      { $setOnInsert: { slug, label } },
+      { upsert: true, new: true }
+    );
+    if (am) ids.push(am._id);
+  }
+  return ids;
+}
+
+// ── Normalized Data Ingestion Helpers ────────────────────────────────────────
+
+async function upsertPhotos(gymId, rawPhotos = [], now) {
+  if (!rawPhotos.length) return;
+  for (const p of rawPhotos) {
+    if (!p.publicUrl) continue;
+    await Photo.updateOne(
+      { publicUrl: p.publicUrl },
+      { 
+        $setOnInsert: { 
+          gymId,
+          originalUrl: p.originalUrl,
+          localPath: p.localPath,
+          publicUrl: p.publicUrl,
+          thumbnailUrl: p.thumbnailUrl,
+          type: p.type,
+          width: p.width,
+          height: p.height,
+          sizeBytes: p.sizeBytes,
+          isCover: p.isCover || false,
+          downloadedAt: p.downloadedAt || now,
+          createdAt: now
+        }
+      },
+      { upsert: true }
+    );
+  }
+}
+
+async function upsertCrawlMeta(gymId, rawMeta, now) {
+  if (!rawMeta) return;
+  await CrawlMeta.updateOne(
+    { gymId },
+    {
+      $set: {
+        lastCrawledAt: now,
+        crawlStatus: rawMeta.crawlStatus || 'completed',
+        crawlVersion: rawMeta.crawlVersion || 1,
+        crawlError: rawMeta.crawlError,
+        missingFields: rawMeta.missingFields,
+        dataCompleteness: rawMeta.dataCompleteness || 0,
+        sourceUrl: rawMeta.sourceUrl,
+        jobId: rawMeta.jobId,
+        updatedAt: now
+      },
+      $setOnInsert: {
+        gymId,
+        firstCrawledAt: rawMeta.firstCrawledAt || now,
+        createdAt: now
+      }
+    },
+    { upsert: true }
+  );
 }
 
 // ── Build GeoJSON location from lat/lng ───────────────────────────────────────
@@ -176,19 +281,49 @@ async function upsertGym(crawledData) {
     const existing = await findExistingGym(crawledData);
     const now = new Date();
 
+    // ── Resolve Dual-Write Mappings ──────────────────────────────────────────
+    const categoryId = await resolveCategory(crawledData.category);
+    const amenityIds = await resolveAmenities(crawledData.amenities?.raw);
+    await resolvePlaceType(crawledData.primaryType);
+
+    // Provide the generated IDs onto the raw document payload
+    const normalizedData = { ...crawledData };
+    normalizedData.categoryId = categoryId;
+    normalizedData.amenityIds = amenityIds;
+    normalizedData.parsed = true;
+
+    // Shift the raw attributes so they don't collide with our API virtuals
+    normalizedData.rawPhotos    = crawledData.photos;
+    normalizedData.rawAmenities = crawledData.amenities;
+    normalizedData.rawCrawlMeta = crawledData.crawlMeta;
+    
+    // Delete the conflicting keys before triggering Mongoose strict mode
+    delete normalizedData.photos;
+    delete normalizedData.amenities;
+    delete normalizedData.crawlMeta;
+
     // ── INSERT path ──────────────────────────────────────────────────────────
     if (!existing) {
-      // Add GeoJSON location field if coords available
-      if (crawledData.lat != null && crawledData.lng != null) {
-        crawledData.location = buildLocation(crawledData.lat, crawledData.lng);
+      if (normalizedData.lat != null && normalizedData.lng != null) {
+        normalizedData.location = buildLocation(normalizedData.lat, normalizedData.lng);
       }
 
-      const gym = await Gym.create(crawledData);
-      const newReviewCount = await insertReviews(gym._id, crawledData.reviews);
+      // 1. Create Gym (Raw array values mapped correctly to raw field)
+      const gym = await Gym.create(normalizedData);
+      const gymId = gym._id;
 
-      logger.info(`[INSERT] "${crawledData.name}" → new gym added`);
+      // 2. Parallel ingestion of secondary scaled data
+      await Promise.all([
+        insertReviews(gymId, crawledData.reviews),
+        upsertPhotos(gymId, crawledData.photos, now),
+        upsertCrawlMeta(gymId, crawledData.crawlMeta, now)
+      ]);
+
+      const newReviewCount = await Review.countDocuments({ gymId });
+
+      logger.info(`[INSERT] "${crawledData.name}" → new gym added (dual-write active)`);
       result.action = 'inserted';
-      result.gymId = gym._id;
+      result.gymId = gymId;
       result.newReviews = newReviewCount;
       return result;
     }
@@ -197,36 +332,49 @@ async function upsertGym(crawledData) {
     const gymId = existing._id;
     const $set  = {};
 
-    // 1. Diff tracked fields and write change logs
+    // 1. Diff tracked fields
     const diffs = diffTrackedFields(existing, crawledData);
     if (diffs.length) {
       await writeChangeLogs(gymId, diffs, now);
       diffs.forEach((d) => result.changedFields.push(d.field));
     }
 
-    // 2. Merge reviews (separate collection, no overwrite)
-    const newReviewCount = await mergeReviews(gymId, crawledData.reviews);
-    result.newReviews = newReviewCount;
+    // 2. Parallel ingestion of external records (Merging into secondary collections)
+    const reviewResult = await mergeReviews(gymId, crawledData.reviews);
+    result.newReviews = reviewResult;
+    
+    await Promise.all([
+      upsertPhotos(gymId, crawledData.photos, now),
+      upsertCrawlMeta(gymId, crawledData.crawlMeta, now)
+    ]);
 
     // Recount and update totalReviews on gym doc
-    if (newReviewCount > 0) {
-      const total = await Review.countDocuments({ gymId });
-      $set.totalReviews = total;
-    }
+    const currentTotalReviews = await Review.countDocuments({ gymId });
+    $set.totalReviews = currentTotalReviews;
 
-    // 3. Safe-overwrite fields — always set from fresh crawl
+    // 3. Safe-overwrite fields (Applies describing variables)
     for (const field of SAFE_OVERWRITE_FIELDS) {
-      const val = crawledData[field];
+      const val = normalizedData[field];
       if (val !== undefined) {
         $set[field] = val;
       }
     }
 
-    // 4. Also rebuild GeoJSON location from fresh lat/lng
+    // Explicitly safe-overwrite the raw fields
+    $set.rawPhotos    = normalizedData.rawPhotos;
+    $set.rawAmenities = normalizedData.rawAmenities;
+    $set.rawCrawlMeta = normalizedData.rawCrawlMeta;
+
+    // Explicitly set normalized IDs and flags
+    $set.categoryId = categoryId;
+    $set.amenityIds = amenityIds;
+    $set.parsed = true;
+
+    // 4. Also rebuild GeoJSON location
     const location = buildLocation(crawledData.lat, crawledData.lng);
     if (location) $set.location = location;
 
-    // 5. crawlMeta — partial update, NEVER touch firstCrawledAt
+    // 5. crawlMeta — partial update, NEVER touch firstCrawledAt in Raw
     $set['crawlMeta.lastCrawledAt']   = now;
     $set['crawlMeta.crawlStatus']     = crawledData.crawlMeta?.crawlStatus     || 'completed';
     $set['crawlMeta.crawlVersion']    = (existing.crawlMeta?.crawlVersion || 1) + 1;
@@ -237,19 +385,18 @@ async function upsertGym(crawledData) {
     // 6. Always set updatedAt
     $set.updatedAt = now;
 
-    // 7. Determine if anything actually changed
-    const somethingChanged = diffs.length > 0 || newReviewCount > 0;
+    // Determine if anything changed
+    const somethingChanged = diffs.length > 0 || reviewResult > 0;
 
-    // We always write the safe-overwrite $set (rating, hours, etc. may differ)
     await Gym.findByIdAndUpdate(gymId, { $set }, { new: false });
 
     if (somethingChanged) {
       logger.info(
-        `[UPDATE] "${crawledData.name}" → ${diffs.length} field(s) changed, ${newReviewCount} new review(s) added`
+        `[UPDATE] "${crawledData.name}" → ${diffs.length} field(s) changed, ${reviewResult} new review(s) synced`
       );
       result.action = 'updated';
     } else {
-      logger.info(`[SKIP]   "${crawledData.name}" → already up to date, nothing changed`);
+      logger.info(`[SKIP]   "${crawledData.name}" → already up to date & sync finished.`);
       result.action = 'skipped';
     }
 
