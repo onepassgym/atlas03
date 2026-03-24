@@ -151,15 +151,6 @@ function startScheduler() {
 
     // Start the weekly scheduler
     startScheduler();
-
-    // On first run (no jobs yet), immediately queue NCR cities
-    const existingJobs = await CrawlJob.countDocuments().catch(() => -1);
-    if (existingJobs === 0) {
-      logger.info('🆕 First run detected — immediately queuing NCR cities');
-      await scheduleNCRCrawl('first-run');
-    } else {
-      logger.info(`ℹ️  ${existingJobs} existing crawl jobs found — skipping initial queue`);
-    }
   });
 })();
 
