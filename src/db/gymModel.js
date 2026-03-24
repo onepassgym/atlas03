@@ -125,6 +125,11 @@ const GymSchema = new mongoose.Schema({
   areaName:   String,
   crawlJobId: String,
 
+  // Raw Crawled Arrays (Stored for diffing)
+  rawPhotos:     [mongoose.Schema.Types.Mixed],
+  rawAmenities:  mongoose.Schema.Types.Mixed,
+  rawCrawlMeta:  mongoose.Schema.Types.Mixed,
+
   // Data Pipeline
   parsed:    { type: Boolean, default: false },
 
