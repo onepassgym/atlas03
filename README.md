@@ -97,7 +97,7 @@ API is live at **http://localhost:8747**
 > are automatically queued. After that, they re-crawl every **Sunday at 2:00 AM IST**.
 
 > **VPS deployment:** See [DEPLOY.md](./DEPLOY.md) for full guide to map this to
-> `atlas.onepassgym.cloud` with Nginx + SSL.
+> `atlas.onepassgym.com` with Nginx + SSL.
 
 ---
 

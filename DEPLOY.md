@@ -1,7 +1,7 @@
-# 🚀 Deployment Guide — atlas.onepassgym.cloud
+# 🚀 Deployment Guide — atlas.onepassgym.com
 
 Step-by-step guide to deploy Atlas05 Scraper on your Hostinger VPS
-and map it to `atlas.onepassgym.cloud`.
+and map it to `atlas.onepassgym.com`.
 
 ---
 
@@ -18,7 +18,7 @@ and map it to `atlas.onepassgym.cloud`.
 ## Prerequisites
 
 - Hostinger VPS (Ubuntu 22.04 recommended)
-- Domain: `atlas.onepassgym.cloud` pointing to your VPS IP
+- Domain: `atlas.onepassgym.com` pointing to your VPS IP
 - SSH access to VPS
 
 ---
@@ -36,7 +36,7 @@ A      atlas              <YOUR_VPS_IP>
 Wait 5–30 minutes for DNS to propagate. Verify:
 
 ```bash
-ping atlas.onepassgym.cloud
+ping atlas.onepassgym.com
 # Should resolve to your VPS IP
 ```
 
@@ -119,7 +119,7 @@ NODE_ENV=production
 MONGODB_URI=mongodb://127.0.0.1:27327/atlas05
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6847
-MEDIA_BASE_URL=https://atlas.onepassgym.cloud/media
+MEDIA_BASE_URL=https://atlas.onepassgym.com/media
 SCRAPER_HEADLESS=true
 SCRAPER_CONCURRENCY=3
 LOG_LEVEL=info
@@ -165,7 +165,7 @@ curl http://localhost:8747/health
 Create the Nginx site config:
 
 ```bash
-nano /etc/nginx/sites-available/atlas.onepassgym.cloud
+nano /etc/nginx/sites-available/atlas.onepassgym.com
 ```
 
 Paste this config:
@@ -173,7 +173,7 @@ Paste this config:
 ```nginx
 server {
     listen 80;
-    server_name atlas.onepassgym.cloud;
+    server_name atlas.onepassgym.com;
 
     # Let Certbot handle HTTPS redirect after SSL setup
     location / {
@@ -209,14 +209,14 @@ server {
 Enable site and test:
 
 ```bash
-ln -s /etc/nginx/sites-available/atlas.onepassgym.cloud /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/atlas.onepassgym.com /etc/nginx/sites-enabled/
 nginx -t        # must say: syntax is ok
 systemctl reload nginx
 ```
 
 Test HTTP first:
 ```bash
-curl http://atlas.onepassgym.cloud/health
+curl http://atlas.onepassgym.com/health
 ```
 
 ---
@@ -224,7 +224,7 @@ curl http://atlas.onepassgym.cloud/health
 ## Step 7 — SSL Certificate (HTTPS)
 
 ```bash
-certbot --nginx -d atlas.onepassgym.cloud
+certbot --nginx -d atlas.onepassgym.com
 ```
 
 Follow prompts:
@@ -235,7 +235,7 @@ Follow prompts:
 Certbot auto-updates your Nginx config. Verify:
 
 ```bash
-curl https://atlas.onepassgym.cloud/health
+curl https://atlas.onepassgym.com/health
 # { "status": "ok", ... }
 ```
 
@@ -269,7 +269,7 @@ Expected output on first run:
 
 Check job status via API:
 ```bash
-curl https://atlas.onepassgym.cloud/api/crawl/jobs
+curl https://atlas.onepassgym.com/api/crawl/jobs
 ```
 
 ---
@@ -309,18 +309,18 @@ docker compose logs -f worker
 docker compose restart worker
 
 # Check queue status
-curl https://atlas.onepassgym.cloud/api/crawl/queue/stats
+curl https://atlas.onepassgym.com/api/crawl/queue/stats
 
 # Check DB stats
 docker compose exec api node scripts/dbStats.js
 
 # Manually trigger NCR crawl now (without waiting for Sunday)
-curl -X POST https://atlas.onepassgym.cloud/api/crawl/batch \
+curl -X POST https://atlas.onepassgym.com/api/crawl/batch \
   -H "Content-Type: application/json" \
   -d '{"cities": ["Delhi, India", "Ghaziabad, Uttar Pradesh, India", "Gurugram, Haryana, India", "Noida, Uttar Pradesh, India"]}'
 
 # Add a new city
-curl -X POST https://atlas.onepassgym.cloud/api/crawl/city \
+curl -X POST https://atlas.onepassgym.com/api/crawl/city \
   -H "Content-Type: application/json" \
   -d '{"cityName": "Mumbai, India"}'
 
@@ -341,12 +341,12 @@ docker compose down -v
 ## Media File Access
 
 Photos are stored at `/var/www/atlas05/media/` on the VPS
-and served at `https://atlas.onepassgym.cloud/media/`.
+and served at `https://atlas.onepassgym.com/media/`.
 
 Example URL:
 ```
-https://atlas.onepassgym.cloud/media/photos/my-gym-delhi/abc123.jpg
-https://atlas.onepassgym.cloud/media/thumbnails/th_abc123.jpg
+https://atlas.onepassgym.com/media/photos/my-gym-delhi/abc123.jpg
+https://atlas.onepassgym.com/media/thumbnails/th_abc123.jpg
 ```
 
 Nginx serves these directly (bypasses Node.js) for maximum speed.
@@ -391,7 +391,7 @@ Internet
     │
     ▼
 Nginx :443 (HTTPS)
-atlas.onepassgym.cloud
+atlas.onepassgym.com
     │
     ├─ /api/*    → proxy → Node.js API :8747
     ├── /media/* → static → /var/www/atlas05/media/
