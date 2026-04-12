@@ -63,10 +63,15 @@ app.get('/health', (_, res) => res.json({
 }));
 
 // ── Root docs ─────────────────────────────────────────────────────────────────
-app.get('/', (_, res) => res.json({
-  service: '🏋️ Atlas05 Scraper API',
-  version: '1.0.0',
-  port:    cfg.server.port,
+app.get('/', (_, res) => {
+  const lastUpdate = fs.statSync(__filename).mtime;
+  const formattedUpdate = lastUpdate.toISOString().replace('T', ' ').split('.')[0];
+
+  return res.json({
+    service: '🏋️ Atlas05 Scraper API',
+    version: '1.0.0',
+    port:    cfg.server.port,
+    lastCodeUpdate: formattedUpdate,
   endpoints: {
     'POST /api/crawl/city':          'Start a city crawl',
     'POST /api/crawl/gym':           'Crawl by gym name',
@@ -81,9 +86,12 @@ app.get('/', (_, res) => res.json({
     'GET  /api/gyms/:id':            'Full gym detail',
     'PATCH /api/gyms/:id':           'Update platform fields',
     'GET  /api/system/logs':         'List/view all log files',
-    'GET  /api/system/logs/latest':  'Tail latest app log'
+    'GET  /api/system/logs/latest':  'Tail latest app log',
   },
-}));
+});
+});
+
+
 
 // ── Error handlers ────────────────────────────────────────────────────────────
 app.use((req, res) =>
