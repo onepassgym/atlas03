@@ -94,20 +94,22 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
-// ── NCR Scheduled Crawl ───────────────────────────────────────────────────────
-// Cities: Delhi, Ghaziabad, Gurugram, Noida
+// ── Scheduled Crawl ──────────────────────────────────────────────────────────
+// Cities: Delhi, Ghaziabad, Gurugram, Noida, Bangalore
 // Schedule: every Sunday at 02:00 AM IST (20:30 UTC Saturday)
-// Re-crawls all 4 cities weekly to catch new gyms + update existing data
+// Re-crawls all cities weekly to catch new gyms + update existing data
 
 const NCR_CITIES = [
-  'Delhi, India',
+  // 'Delhi, India',
   'Ghaziabad, Uttar Pradesh, India',
-  'Gurugram, Haryana, India',
-  'Noida, Uttar Pradesh, India',
+  // 'Gurugram, Haryana, India',
+  // 'Noida, Uttar Pradesh, India',
+  'Bangalore, Karnataka, India',
+  'Bengaluru, Karnataka, India',
 ];
 
 async function scheduleNCRCrawl(reason = 'scheduled') {
-  logger.info(`\n📅 NCR crawl triggered [${reason}] — queuing ${NCR_CITIES.length} cities`);
+  logger.info(`\n📅 Scheduled crawl triggered [${reason}] — queuing ${NCR_CITIES.length} cities`);
   for (const cityName of NCR_CITIES) {
     const jobId = uuidv4();
     try {
@@ -123,7 +125,7 @@ async function scheduleNCRCrawl(reason = 'scheduled') {
       logger.error(`  ❌ Failed to queue ${cityName}: ${err.message}`);
     }
   }
-  logger.info(`📅 NCR crawl batch queued.\n`);
+  logger.info(`📅 Scheduled crawl batch queued.\n`);
 }
 
 function startScheduler() {
@@ -135,7 +137,7 @@ function startScheduler() {
     timezone: 'UTC',
   });
 
-  logger.info('⏰ Scheduler started — NCR cities crawl: every Sunday 02:00 AM IST');
+  logger.info('⏰ Scheduler started — Scheduled cities crawl: every Sunday 02:00 AM IST');
 }
 
 // ── Startup ───────────────────────────────────────────────────────────────────
