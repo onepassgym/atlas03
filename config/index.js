@@ -37,7 +37,7 @@ module.exports = {
   },
   media: {
     basePath: process.env.MEDIA_BASE_PATH || './media',
-    baseUrl:  getEnv('MEDIA_BASE_URL', isProd ? 'https://atlas.onepassgym.cloud/media' : `http://localhost:${process.env.PORT || '8747'}/media`),
+    baseUrl:  getEnv('MEDIA_BASE_URL', isProd ? 'https://atlas.onepassgym.com/media' : `http://localhost:${process.env.PORT || '8747'}/media`),
   },
   dedup: {
     radiusMeters: parseInt(process.env.DEDUP_RADIUS_METERS || '50', 10),
