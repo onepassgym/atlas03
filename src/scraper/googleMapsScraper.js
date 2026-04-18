@@ -262,38 +262,74 @@ async function scrapeGymDetail(page, url) {
       if (starKeys[i]) ratingBreakdown[starKeys[i]] = n;
     });
 
+    // Popular Times (on main overview page)
+    const popularTimes = [...document.querySelectorAll('[aria-label*="busy at" i], [aria-label*="Busy at" i], [aria-label*="Usually" i]')]
+      .map(el => el.getAttribute('aria-label')).filter(Boolean);
+
     const permanentlyClosed = !!document.querySelector('.eXlrNe, [aria-label*="Permanently closed" i]');
 
     return {
       name, rating, totalReviews, address, phone, website,
       category, priceLevel, description, openingHours, isOpenNow,
       plusCode, amenities, highlights, serviceOptions, photoUrls,
-      lat, lng, placeId, ratingBreakdown, permanentlyClosed,
+      lat, lng, placeId, ratingBreakdown, permanentlyClosed, popularTimes,
       googleMapsUrl: window.location.href,
     };
   });
 
   if (!core.name) throw new Error('Could not extract gym name — page may not have loaded correctly');
 
+  // ── About Tab (Deep Amenities) ──────────────────────────────────────────
+  const deepAmenities = await scrapeAboutTab(page);
+
   // ── Reviews ──────────────────────────────────────────────────────────────
-  const reviews = await scrapeReviews(page);
+  const { reviews, reviewSummary } = await scrapeReviews(page);
 
   // ── All photos tab ────────────────────────────────────────────────────────
   const allPhotos = await scrapePhotosTab(page, core.photoUrls || []);
 
-  return { ...core, reviews, photoUrls: allPhotos };
+  const mergedAmenities = [...new Set([...(core.amenities || []), ...(deepAmenities || [])])];
+
+  return { ...core, amenities: mergedAmenities, reviews, reviewSummary, photoUrls: allPhotos };
+}
+
+// ── Scrape About Tab (Detailed Amenities & Accessibility) ──────────────────
+async function scrapeAboutTab(page) {
+  try {
+    const tab = page.locator('button[aria-label*="About" i], button:has-text("About")').first();
+    if (!await tab.isVisible({ timeout: 2000 }).catch(() => false)) return null;
+    await tab.click();
+    await sleep(1000, 1500);
+
+    return await page.evaluate(() => {
+      const items = [...document.querySelectorAll('.hpLkke, .E0DTEd li, .kx8XBd, .iP2t7d')];
+      return items.map(el => el.textContent?.trim() || el.getAttribute('aria-label')).filter(Boolean);
+    });
+  } catch (err) {
+    return null;
+  }
 }
 
 // ── Scrape reviews (up to 150 per gym) ───────────────────────────────────────
 
 async function scrapeReviews(page) {
   const reviews = [];
+  let reviewSummary = null;
   try {
     // Click Reviews tab
     const tab = page.locator('button[aria-label*="reviews" i], button:has-text("Reviews")').first();
-    if (!await tab.isVisible({ timeout: 3000 }).catch(() => false)) return reviews;
+    if (!await tab.isVisible({ timeout: 3000 }).catch(() => false)) return { reviews, reviewSummary };
     await tab.click();
     await sleep(1500, 2200);
+
+    // Extract AI Review Summary or keywords
+    try {
+      reviewSummary = await page.evaluate(() => {
+        const aiSummary = document.querySelector('.P_Pval, .OA1nbd, .d7Bzhf')?.textContent?.trim();
+        const keywords = [...document.querySelectorAll('.fontBodySmall.Cw1rxd')].map(el => el.textContent?.trim()).join(', ');
+        return aiSummary || keywords || null;
+      });
+    } catch (_) {}
 
     // Sort by Newest
     try {
@@ -352,7 +388,7 @@ async function scrapeReviews(page) {
   } catch (err) {
     logger.warn(`Review scraping partial: ${err.message}`);
   }
-  return reviews;
+  return { reviews, reviewSummary };
 }
 
 // ── Scrape Photos tab (up to 80 photos) ──────────────────────────────────────

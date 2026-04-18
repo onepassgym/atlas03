@@ -79,7 +79,19 @@ async function processGym(raw, areaName, jobId, downloadMedia = true) {
 
       description:    raw.description    || null,
       priceLevel:     raw.priceLevel     || null,
+      
+      // Phase 1 Semantic Enrichment parsed data
       amenities:      { raw: raw.amenities || [] },
+      rawAmenities: {
+        has_pool: (raw.amenities || []).some(a => a.toLowerCase().includes('pool')),
+        has_sauna: (raw.amenities || []).some(a => a.toLowerCase().includes('sauna')),
+        accessible: (raw.amenities || []).some(a => a.toLowerCase().includes('wheelchair') || a.toLowerCase().includes('accessible')),
+        free_parking: (raw.amenities || []).some(a => a.toLowerCase().includes('parking') && !a.toLowerCase().includes('paid')),
+        has_showers: (raw.amenities || []).some(a => a.toLowerCase().includes('shower') || a.toLowerCase().includes('bathroom')),
+      },
+      popularTimes:   raw.popularTimes   || [],
+      reviewSummary:  raw.reviewSummary  || null,
+      
       highlights:     raw.highlights     || [],
       serviceOptions: raw.serviceOptions || [],
 
