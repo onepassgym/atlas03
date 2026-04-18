@@ -90,7 +90,7 @@ app.use((err, req, res, _next) => {
 
   app.listen(cfg.server.port, async () => {
     logger.info(`\n${'─'.repeat(50)}`);
-    logger.info(`🚀 Atlas05 API    →  http://localhost:${cfg.server.port}`);
+    logger.info(`🚀 Atlas06 API    →  http://localhost:${cfg.server.port}`);
     logger.info(`📦 Media files       →  http://localhost:${cfg.server.port}/media`);
     logger.info(`📊 Dashboard         →  http://localhost:${cfg.server.port}/dashboard`);
     logger.info(`📡 SSE events        →  http://localhost:${cfg.server.port}/api/events`);

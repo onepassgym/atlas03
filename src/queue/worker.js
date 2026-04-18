@@ -245,7 +245,7 @@ async function processGymNameJob(job) {
 async function start() {
   await connectDB();
 
-  const worker = new Worker('atlas05-crawl', async (job) => {
+  const worker = new Worker('atlas06-crawl', async (job) => {
     logger.info(`⚙️  Processing job: ${job.name} [${job.id}]`);
     if (job.name === 'city-crawl')     return processCityJob(job);
     if (job.name === 'gym-name-crawl') return processGymNameJob(job);
@@ -260,7 +260,7 @@ async function start() {
   worker.on('failed',    (job, err) => logger.error(`❌ Job failed: ${job?.id} — ${err.message}`));
   worker.on('error',     (err) => logger.error(`Worker error: ${err.message}`));
 
-  logger.info(`\n🚀 Atlas05 Worker started  [concurrency: ${CONCURRENCY}, lockDuration: 3600s]`);
+  logger.info(`\n🚀 Atlas06 Worker started  [concurrency: ${CONCURRENCY}, lockDuration: 3600s]`);
 
   // ── Graceful shutdown ────────────────────────────────────────────────────
   const shutdown = async (signal) => {

@@ -6,7 +6,7 @@
  * Usage:  npm run worker:chain
  *
  * Architecture:
- *   - Listens on queue: 'atlas05-chain-crawl'
+ *   - Listens on queue: 'atlas06-chain-crawl'
  *   - Each chain job: fetches all locations from store locator, then
  *     enriches via Google Maps in parallel using p-limit.
  *   - Reuses existing processGym() + upsertGym() pipeline for DB writes.
@@ -466,7 +466,7 @@ async function start() {
     logger.warn(`Chain seed skipped: ${err.message}`);
   }
 
-  const worker = new Worker('atlas05-chain-crawl', async (job) => {
+  const worker = new Worker('atlas06-chain-crawl', async (job) => {
     logger.info(`⚙️  Processing chain job: ${job.name} [${job.id}]`);
     if (job.name === 'chain-crawl') return processChainJob(job);
     throw new Error(`Unknown chain job name: ${job.name}`);
@@ -480,7 +480,7 @@ async function start() {
   worker.on('failed',    (job, err) => logger.error(`❌ Chain job failed: ${job?.id} — ${err.message}`));
   worker.on('error',     (err) => logger.error(`Chain worker error: ${err.message}`));
 
-  logger.info(`\n🏋️  Atlas05 Chain Worker started  [concurrency: ${CHAIN_CONCURRENCY}, enrich: ${ENRICH_CONCURRENCY}, freshness: ${FRESHNESS_DAYS}d]`);
+  logger.info(`\n🏋️  Atlas06 Chain Worker started  [concurrency: ${CHAIN_CONCURRENCY}, enrich: ${ENRICH_CONCURRENCY}, freshness: ${FRESHNESS_DAYS}d]`);
 
   // ── Graceful shutdown ────────────────────────────────────────────────────
   const shutdown = async (signal) => {

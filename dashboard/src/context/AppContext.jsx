@@ -46,7 +46,7 @@ export function AppProvider({ children }) {
     const keyName = `atlas_api_key_${env}`;
     let key = sessionStorage.getItem(keyName);
     if (!key) {
-      key = prompt(`Enter Atlas05 API Key for [${env.toUpperCase()}]:`);
+      key = prompt(`Enter Atlas06 API Key for [${env.toUpperCase()}]:`);
       if (key) sessionStorage.setItem(keyName, key);
     }
     if (key) setApiKey(key);
@@ -92,7 +92,7 @@ export function AppProvider({ children }) {
     const keyName = `atlas_api_key_${newEnv}`;
     let key = sessionStorage.getItem(keyName);
     if (!key) {
-      key = prompt(`Enter Atlas05 API Key for [${newEnv.toUpperCase()}]:`);
+      key = prompt(`Enter Atlas06 API Key for [${newEnv.toUpperCase()}]:`);
       if (key) sessionStorage.setItem(keyName, key);
     }
     if (key) setApiKey(key);

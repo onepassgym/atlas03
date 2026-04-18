@@ -281,7 +281,7 @@ router.get('/:id', param('id').isMongoId(), async (req, res) => {
 // PATCH /api/gyms/:id  — update platform fields only
 router.patch('/:id', param('id').isMongoId(), async (req, res) => {
   if (validate(req, res)) return;
-  const allowed = ['atlas05'];
+  const allowed = ['atlas06'];
   const set = {};
   for (const k of allowed) if (req.body[k]) set[k] = req.body[k];
   try {

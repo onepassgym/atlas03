@@ -10,7 +10,7 @@ export default function Header() {
     <header className={styles.header} id="app-header">
       <div className={styles.headerLeft}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span className={styles.logo}><Dumbbell size={20} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />Atlas05</span>
+          <span className={styles.logo}><Dumbbell size={20} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />Atlas06</span>
           <span className={styles.logoSub}>Mission Control</span>
         </div>
         {!isProdHost && (

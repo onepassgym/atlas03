@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import createGlobe from 'cobe';
-import { MapPin, Dumbbell, Building2, Globe2, ArrowRight, Maximize2, Minimize2 } from 'lucide-react';
+import { MapPin, Dumbbell, Building2, Globe2, ArrowRight, Maximize2, Minimize2, Search, Play, Pause } from 'lucide-react';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 
-// ── City markers with real coordinates ──────────────────────
-const CITY_MARKERS = [
+// ── Fallback Base City Markers ────────────────────────────────────────────────
+const BASE_MARKERS = [
   { name: 'Mumbai',     coords: [19.076, 72.878],  size: 0.10 },
   { name: 'Delhi',      coords: [28.704, 77.103],  size: 0.10 },
   { name: 'Bengaluru',  coords: [12.972, 77.595],  size: 0.08 },
@@ -16,17 +16,6 @@ const CITY_MARKERS = [
   { name: 'Pune',       coords: [18.520, 73.857],  size: 0.06 },
   { name: 'Ahmedabad',  coords: [23.023, 72.571],  size: 0.05 },
   { name: 'Jaipur',     coords: [26.913, 75.787],  size: 0.05 },
-  { name: 'Lucknow',    coords: [26.847, 80.947],  size: 0.04 },
-  { name: 'Goa',        coords: [15.300, 74.124],  size: 0.04 },
-  { name: 'Chandigarh', coords: [30.734, 76.779],  size: 0.04 },
-  { name: 'Kochi',      coords: [9.932, 76.267],   size: 0.04 },
-  { name: 'Surat',      coords: [21.170, 72.831],  size: 0.04 },
-  { name: 'Indore',     coords: [22.720, 75.858],  size: 0.04 },
-  { name: 'Nagpur',     coords: [21.146, 79.088],  size: 0.03 },
-  { name: 'Coimbatore', coords: [11.017, 76.956],  size: 0.03 },
-  { name: 'Mysore',     coords: [12.296, 76.639],  size: 0.03 },
-  { name: 'Bhopal',     coords: [23.260, 77.413],  size: 0.03 },
-  { name: 'Vadodara',   coords: [22.307, 73.181],  size: 0.03 },
 ];
 
 export default function GlobePage() {
@@ -37,6 +26,11 @@ export default function GlobePage() {
   const phiRef = useRef(0);
   const thetaRef = useRef(0.3);
   const widthRef = useRef(0);
+  const focusRef = useRef(null); // stores [lat, lng] to focus on
+  const isPausedRef = useRef(false);
+
+  const [isPaused, setIsPaused] = useState(false);
+  const [zoom, setZoom] = useState(1);
 
   const [stats, setStats] = useState(null);
   const [hoveredCity, setHoveredCity] = useState(null);
@@ -44,22 +38,59 @@ export default function GlobePage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const globeContainerRef = useRef(null);
 
-  // Fetch overview stats
+  // Dynamic Markers State
+  const [dynamicMarkers, setDynamicMarkers] = useState(BASE_MARKERS);
+  const [newCityName, setNewCityName] = useState('');
+  const [isGeocoding, setIsGeocoding] = useState(false);
+
+  // Helper: Geocode a city using Nominatim
+  const geocodeCity = async (cityName) => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityName)}&format=json&limit=1`);
+      const data = await res.json();
+      if (data && data.length > 0) {
+        return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+      }
+    } catch (e) {
+      console.error('Geocoding error:', e);
+    }
+    return null;
+  };
+
+  // Fetch overview stats and dynamically geocode missing top cities
   useEffect(() => {
-    api.get('/api/gyms/stats').then(res => {
+    api.get('/api/gyms/stats').then(async res => {
       if (res?.success) {
         setStats(res.stats);
-        // Build city lookup
         const lookup = {};
+        const missingCities = [];
+
         (res.stats.topCities || []).forEach(c => {
           lookup[c._id?.toLowerCase()] = c.count;
+          if (!dynamicMarkers.some(m => m.name.toLowerCase() === c._id.toLowerCase())) {
+             missingCities.push(c._id);
+          }
         });
         setCityStats(lookup);
+
+        // Fetch coords for up to 5 missing top cities to avoid rate limits
+        const toGeocode = missingCities.slice(0, 5);
+        if (toGeocode.length > 0) {
+          const newMarkers = [];
+          for (const city of toGeocode) {
+            const coords = await geocodeCity(city);
+            if (coords) newMarkers.push({ name: city, coords, size: 0.05 });
+            await new Promise(r => setTimeout(r, 600)); // Respect Nominatim limits
+          }
+          if (newMarkers.length > 0) {
+            setDynamicMarkers(prev => [...prev, ...newMarkers]);
+          }
+        }
       }
     }).catch(() => {});
-  }, []);
+  }, []); // Only run once on mount
 
-  // Globe init with drag support
+  // Globe init with drag support & focus tracking
   useEffect(() => {
     if (!canvasRef.current) return;
     const isDark = theme === 'dark';
@@ -90,17 +121,51 @@ export default function GlobePage() {
         baseColor: isDark ? [0.05, 0.06, 0.12] : [0.97, 0.97, 1],
         markerColor: isDark ? [0.2, 0.7, 1] : [0.15, 0.4, 0.95],
         glowColor: isDark ? [0.04, 0.06, 0.15] : [0.82, 0.84, 0.98],
-        markers: CITY_MARKERS.map(c => ({
+        markers: dynamicMarkers.map(c => ({
           location: c.coords,
           size: c.size,
         })),
         onRender: (state) => {
-          if (!pointerDown.current) {
+          // Manual drag mapping
+          if (pointerDown.current) {
+            currentPhi += pointerDeltaRef.current.x;
+            currentTheta = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, currentTheta + pointerDeltaRef.current.y));
+            pointerDeltaRef.current = { x: 0, y: 0 };
+            focusRef.current = null; // Clear focus if user drags
+          } 
+          // Animate to focus city
+          else if (focusRef.current) {
+            const [lat, lng] = focusRef.current;
+            // Cobe angle mapping approximation
+            const targetPhi = (lng * Math.PI) / 180 + Math.PI; 
+            const targetTheta = (lat * Math.PI) / 180;
+            
+            // Normalize phi difference to take the shortest path
+            let dPhi = targetPhi - currentPhi;
+            while (dPhi > Math.PI) dPhi -= 2 * Math.PI;
+            while (dPhi < -Math.PI) dPhi += 2 * Math.PI;
+
+            currentPhi += dPhi * 0.06;
+            currentTheta += (targetTheta - currentTheta) * 0.06;
+
+            if (Math.abs(dPhi) < 0.01 && Math.abs(targetTheta - currentTheta) < 0.01) {
+               focusRef.current = null; // Reached target
+            }
+          } 
+          // Auto rotate (if not paused)
+          else if (!isPausedRef.current) {
             currentPhi += 0.003;
           }
-          currentPhi += pointerDeltaRef.current.x;
-          currentTheta = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, currentTheta + pointerDeltaRef.current.y));
-          pointerDeltaRef.current = { x: 0, y: 0 };
+
+          // Pulse effect for queued cities (modifies state dynamically)
+          const time = Date.now() / 150;
+          state.markers = dynamicMarkers.map(c => {
+             if (c.isQueued) {
+               const pulse = (Math.sin(time) + 1) / 2; // cycles 0 to 1
+               return { location: c.coords, size: c.size + pulse * 0.04 };
+             }
+             return { location: c.coords, size: c.size };
+          });
 
           state.phi = currentPhi;
           state.theta = currentTheta;
@@ -119,7 +184,7 @@ export default function GlobePage() {
       globe?.destroy?.();
       window.removeEventListener('resize', onResize);
     };
-  }, [theme]);
+  }, [theme, dynamicMarkers]); // Re-init if markers or theme change
 
   // Pointer drag handlers
   const handlePointerDown = useCallback((e) => {
@@ -139,11 +204,30 @@ export default function GlobePage() {
   const handlePointerMove = useCallback((e) => {
     if (pointerDown.current) {
       pointerDeltaRef.current = {
-        x: e.movementX / 200,
-        y: e.movementY / 200,
+        x: e.movementX / (150 * zoom),
+        y: e.movementY / (150 * zoom),
       };
     }
+  }, [zoom]);
+
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    setZoom(z => Math.max(0.4, Math.min(4, z - e.deltaY * 0.002)));
   }, []);
+
+  // Attach native wheel event listener to prevent default scrolling while zooming
+  useEffect(() => {
+    const canvasContainer = globeContainerRef.current;
+    if (canvasContainer) {
+      canvasContainer.addEventListener('wheel', handleWheel, { passive: false });
+      return () => canvasContainer.removeEventListener('wheel', handleWheel);
+    }
+  }, [handleWheel]);
+
+  const togglePause = () => {
+     setIsPaused(!isPaused);
+     isPausedRef.current = !isPaused;
+  };
 
   const toggleFullscreen = () => {
     if (!isFullscreen) {
@@ -160,23 +244,74 @@ export default function GlobePage() {
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
 
+  // Submit New City to Crawl
+  const handleCrawlCity = async (e) => {
+    e.preventDefault();
+    if (!newCityName.trim() || isGeocoding) return;
+    
+    const name = newCityName.trim();
+    setNewCityName('');
+    setIsGeocoding(true);
+    toast(`Locating ${name}...`, 'info');
+
+    try {
+      // 1. Geocode
+      const coords = await geocodeCity(name);
+      if (coords) {
+         setDynamicMarkers(prev => {
+            const copy = prev.filter(m => m.name.toLowerCase() !== name.toLowerCase());
+            return [...copy, { name, coords, size: 0.1, isQueued: true }];
+         });
+         focusRef.current = coords;
+         toast(`Located ${name}. Queuing crawl...`, 'success');
+      } else {
+         toast(`Could not locate ${name} precisely on map.`, 'warning');
+      }
+
+      // 2. Schedule Crawl
+      const res = await api.post('/api/crawl/city', { cityName: name });
+      if (res.success) {
+        toast(`Crawl job queued for ${name}`, 'success');
+      } else {
+        toast(`Failed to queue ${name}`, 'error');
+      }
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'error');
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
+  const handleCityClick = (city) => {
+     focusRef.current = city.coords;
+  };
+
   const totalGyms = stats?.total || 0;
   const totalCities = stats?.topCities?.length || 0;
   const totalReviews = stats?.totalReviews || 0;
+
+  // Render city list sorted by active vs inactive
+  const sortedMarkers = useMemo(() => {
+      return [...dynamicMarkers].sort((a, b) => {
+         const countA = cityStats[a.name.toLowerCase()] || 0;
+         const countB = cityStats[b.name.toLowerCase()] || 0;
+         return countB - countA;
+      });
+  }, [dynamicMarkers, cityStats]);
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.4 }}
-      style={{ padding: 0, minHeight: 'calc(100vh - 100px)' }}
+      style={{ padding: 0, height: 'calc(100vh - 100px)', overflow: 'hidden' }}
     >
       <div
         ref={globeContainerRef}
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 340px',
-          minHeight: 'calc(100vh - 100px)',
+          height: '100%',
           background: isFullscreen ? 'var(--bg-primary)' : undefined,
         }}
       >
@@ -190,22 +325,36 @@ export default function GlobePage() {
           onPointerOut={handlePointerOut}
           onPointerMove={handlePointerMove}
         >
+          <div style={{ 
+             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+             width: '70%', height: '70%', background: 'radial-gradient(circle, var(--accent) 0%, transparent 60%)',
+             opacity: 0.1, pointerEvents: 'none', filter: 'blur(40px)'
+          }} />
           <canvas
             ref={canvasRef}
             style={{
               width: '100%', maxWidth: 700, aspectRatio: '1',
               touchAction: 'none',
+              transform: `scale(${zoom})`,
+              transition: 'transform 0.1s ease-out',
             }}
           />
 
-          {/* ── Fullscreen button ── */}
-          <button
-            onClick={toggleFullscreen}
-            className="btn sm"
-            style={{ position: 'absolute', top: 16, right: 16, zIndex: 5 }}
-          >
-            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </button>
+          {/* ── Pause & Fullscreen buttons ── */}
+          <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 5, display: 'flex', gap: 8 }}>
+            <button
+              onClick={togglePause}
+              className="btn sm"
+            >
+              {isPaused ? <Play size={14} /> : <Pause size={14} />}
+            </button>
+            <button
+              onClick={toggleFullscreen}
+              className="btn sm"
+            >
+              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+          </div>
 
           {/* ── Center label ── */}
           <div style={{
@@ -217,7 +366,7 @@ export default function GlobePage() {
               textTransform: 'uppercase', letterSpacing: 2,
               fontFamily: 'var(--mono)',
             }}>
-              Drag to explore · Atlas05 Coverage
+              Drag to explore · Click a city to focus
             </div>
           </div>
         </div>
@@ -240,7 +389,7 @@ export default function GlobePage() {
               </h2>
             </div>
             <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              Interactive visualization of all gym venues indexed by Atlas05. Drag the globe to explore coverage areas.
+              Interactive visualization of gym venues indexed by Atlas06. 
             </p>
           </div>
 
@@ -249,11 +398,31 @@ export default function GlobePage() {
             <StatBox icon={<Building2 size={16} />} label="Total Gyms" value={totalGyms} color="var(--accent)" />
             <StatBox icon={<MapPin size={16} />} label="Cities" value={totalCities} color="var(--purple)" />
             <StatBox icon={<Dumbbell size={16} />} label="Reviews" value={totalReviews} color="var(--success)" />
-            <StatBox icon={<Globe2 size={16} />} label="Markers" value={CITY_MARKERS.length} color="var(--cyan)" />
+            <StatBox icon={<Search size={16} />} label="Markers" value={dynamicMarkers.length} color="var(--cyan)" />
           </div>
 
+          {/* Add New City Form */}
+          <form onSubmit={handleCrawlCity} style={{ 
+            display: 'flex', gap: 8, padding: 12, 
+            background: 'var(--bg-surface)', borderRadius: 'var(--radius)',
+            border: '1px solid var(--border)' 
+          }}>
+             <input 
+               type="text" 
+               className="input" 
+               placeholder="Add city to crawl..." 
+               value={newCityName}
+               onChange={e => setNewCityName(e.target.value)}
+               disabled={isGeocoding}
+               style={{ flex: 1, background: 'transparent', border: 'none', padding: 4 }}
+             />
+             <button type="submit" className="btn primary sm" disabled={!newCityName.trim() || isGeocoding} style={{ padding: '6px 12px' }}>
+                <Play size={12} fill="currentColor" />
+             </button>
+          </form>
+
           {/* City List */}
-          <div>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <div style={{
               fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2,
               color: 'var(--text-muted)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6,
@@ -261,15 +430,20 @@ export default function GlobePage() {
               Tracked Cities
               <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 350, overflowY: 'auto' }}>
-              {CITY_MARKERS.map(city => {
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, paddingRight: 4 }}>
+              <AnimatePresence>
+              {sortedMarkers.map((city, i) => {
                 const count = cityStats[city.name?.toLowerCase()] || 0;
                 const isHovered = hoveredCity === city.name;
                 return (
                   <motion.div
                     key={city.name}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.02, duration: 0.2 }}
                     onHoverStart={() => setHoveredCity(city.name)}
                     onHoverEnd={() => setHoveredCity(null)}
+                    onClick={() => handleCityClick(city)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10,
                       padding: '8px 12px', borderRadius: 'var(--radius-sm)',
@@ -279,11 +453,16 @@ export default function GlobePage() {
                   >
                     <div style={{
                       width: 8, height: 8, borderRadius: '50%',
-                      background: count > 100 ? 'var(--accent)' : count > 30 ? 'var(--success)' : count > 0 ? 'var(--warning)' : 'var(--text-muted)',
-                      boxShadow: isHovered ? `0 0 8px ${count > 100 ? 'var(--accent)' : 'var(--success)'}` : 'none',
+                      background: city.isQueued ? '#f97316' : (count > 100 ? 'var(--accent)' : count > 30 ? 'var(--success)' : count > 0 ? 'var(--warning)' : 'var(--text-muted)'),
+                      boxShadow: isHovered ? `0 0 8px ${city.isQueued ? '#f97316' : count > 100 ? 'var(--accent)' : 'var(--success)'}` : 'none',
                       transition: 'box-shadow 0.2s',
                     }} />
-                    <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{city.name}</span>
+                    <span style={{ 
+                      flex: 1, fontSize: 13, fontWeight: city.isQueued ? 700 : 500,
+                      color: city.isQueued ? '#f97316' : 'inherit'
+                    }}>
+                      {city.name} {city.isQueued && <span style={{ fontSize: 10, opacity: 0.8, fontWeight: 500, marginLeft: 4 }}>(Queued)</span>}
+                    </span>
                     <span style={{
                       fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text-muted)',
                       fontWeight: 600,
@@ -293,31 +472,15 @@ export default function GlobePage() {
                     <ArrowRight size={12} style={{
                       color: 'var(--text-muted)', opacity: isHovered ? 1 : 0,
                       transition: 'opacity 0.2s',
+                      transform: isHovered ? 'translateX(0)' : 'translateX(-4px)'
                     }} />
                   </motion.div>
                 );
               })}
+              </AnimatePresence>
             </div>
           </div>
-
-          {/* Legend */}
-          <div style={{
-            fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 14,
-            flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid var(--border)',
-          }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)' }} /> 100+
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--success)' }} /> 30+
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--warning)' }} /> 1+
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--text-muted)' }} /> None
-            </span>
-          </div>
+          
         </div>
       </div>
 
@@ -334,11 +497,17 @@ export default function GlobePage() {
 
 function StatBox({ icon, label, value, color }) {
   return (
-    <div style={{
-      padding: '14px 16px', borderRadius: 'var(--radius-sm)',
-      border: '1px solid var(--border)', background: 'var(--bg-card)',
-      transition: 'border-color 0.2s',
-    }}>
+    <motion.div
+      whileHover={{ y: -2, borderColor: color, boxShadow: `0 4px 12px ${color}15` }}
+      style={{
+        padding: '14px 16px', borderRadius: 'var(--radius)',
+        border: '1px solid var(--border)', 
+        background: 'linear-gradient(180deg, var(--bg-card) 0%, var(--bg-surface) 100%)',
+        transition: 'all 0.2s ease',
+        cursor: 'default',
+        position: 'relative', overflow: 'hidden'
+      }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${color}60, transparent)` }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, color }}>
         {icon}
         <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: 'var(--text-muted)' }}>{label}</span>
@@ -349,6 +518,7 @@ function StatBox({ icon, label, value, color }) {
       }}>
         {typeof value === 'number' ? value.toLocaleString() : value}
       </div>
-    </div>
+    </motion.div>
   );
 }
+

@@ -1,6 +1,6 @@
-# 🏋️ Atlas05 Scraper
+# 🏋️ Atlas06 Scraper
 
-Google Maps fitness venue scraper for the **Atlas05** platform.  
+Google Maps fitness venue scraper for the **Atlas06** platform.  
 No API key required · Node 20 · MongoDB 7 · Redis · Playwright · React SPA Dashboard
 
 ---
@@ -19,7 +19,7 @@ No API key required · Node 20 · MongoDB 7 · Redis · Playwright · React SPA 
 ## 🛠️ Project Structure
 
 ```
-atlas05-scraper/
+atlas06-scraper/
 ├── config/                      ← environment & app configuration
 ├── src/
 │   ├── server.js                ← API entry point (Express)
