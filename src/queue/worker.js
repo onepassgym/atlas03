@@ -9,6 +9,7 @@ const CrawlJob        = require('../db/crawlJobModel');
 const { isJobCancelled, clearCancelFlag } = require('./queues');
 const cfg             = require('../../config');
 const logger          = require('../utils/logger');
+const bus             = require('../services/eventBus');
 
 const connection = {
   host:     cfg.redis.host,
@@ -50,6 +51,7 @@ async function processCityJob(job) {
 
   await connectDB();
   await updateJob(jobId, { status: 'running', startedAt: new Date(), bullJobId: String(job.id) });
+    bus.publish('job:started', { jobId, type: 'city', cityName, categories: categories.length });
 
   const browser = new BrowserManager();
   const stats   = { created: 0, updated: 0, skipped: 0, failed: 0 };
@@ -118,8 +120,16 @@ async function processCityJob(job) {
       }
 
       const res = await processGym(scraped, cityName, jobId, true);
-      if (res.action === 'created') { stats.created++; await updateJob(jobId, { $inc: { 'progress.newGyms': 1, 'progress.scraped': 1 }, $push: { gymIds: res.gymId } }); }
-      if (res.action === 'updated') { stats.updated++; await updateJob(jobId, { $inc: { 'progress.updatedGyms': 1, 'progress.scraped': 1 }, $push: { gymIds: res.gymId } }); }
+      if (res.action === 'created') {
+        stats.created++;
+        await updateJob(jobId, { $inc: { 'progress.newGyms': 1, 'progress.scraped': 1 }, $push: { gymIds: res.gymId } });
+        bus.publish('gym:created', { name: scraped.name, area: cityName, gymId: String(res.gymId) });
+      }
+      if (res.action === 'updated') {
+        stats.updated++;
+        await updateJob(jobId, { $inc: { 'progress.updatedGyms': 1, 'progress.scraped': 1 }, $push: { gymIds: res.gymId } });
+        bus.publish('gym:updated', { name: scraped.name, area: cityName, gymId: String(res.gymId), changes: 1 });
+      }
       if (res.action === 'skipped') { stats.skipped++; await updateJob(jobId, { $inc: { 'progress.skipped': 1 } }); }
       if (res.action === 'error')   {
         stats.failed++;
@@ -146,6 +156,10 @@ async function processCityJob(job) {
     }
 
     await updateJob(jobId, { status: finalStatus, completedAt: new Date(), durationMs });
+
+    // Publish completion event
+    const eventType = finalStatus === 'cancelled' ? 'job:cancelled' : finalStatus === 'failed' ? 'job:failed' : 'job:completed';
+    bus.publish(eventType, { jobId, cityName, status: finalStatus, created: stats.created, updated: stats.updated, failed: stats.failed, skipped: stats.skipped, durationMs });
     logger.info(`\n${finalStatus === 'cancelled' ? '🛑' : '✅'} Done: ${cityName} — status:${finalStatus} created:${stats.created} updated:${stats.updated} skipped:${stats.skipped} failed:${stats.failed} (${(durationMs / 1000).toFixed(1)}s)`);
     return { summary: stats, jobId, durationMs, status: finalStatus };
 
@@ -153,6 +167,7 @@ async function processCityJob(job) {
     await browser.close();
     const durationMs = Date.now() - startTime;
     await updateJob(jobId, { status: 'failed', completedAt: new Date(), durationMs });
+    bus.publish('job:failed', { jobId, cityName, error: err.message, durationMs });
     logger.error(`💥 City job FAILED [${cityName}]: ${err.message}`);
     throw err;
   }
@@ -165,6 +180,7 @@ async function processGymNameJob(job) {
 
   await connectDB();
   await updateJob(jobId, { status: 'running', startedAt: new Date(), bullJobId: String(job.id) });
+    bus.publish('job:started', { jobId, type: 'gym_name', gymName });
 
   const browser = new BrowserManager();
   const stats   = { created: 0, updated: 0, failed: 0 };

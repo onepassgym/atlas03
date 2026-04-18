@@ -45,6 +45,12 @@ router.get('/', (_, res) => {
       'POST /api/system/schedule':     'Update scheduled run cities',
       'GET  /api/system/logs':         'List/view all log files',
       'GET  /api/system/logs/latest':  'Tail latest app log',
+      'GET  /api/events':              'SSE real-time event stream',
+      'GET  /api/events/history':      'Recent event history',
+      'POST /api/events/test':         'Send a test event',
+      'POST /api/events/webhooks':     'Register a webhook',
+      'GET  /api/events/webhooks':     'List webhooks',
+      'GET  /dashboard':               '📊 Live monitoring dashboard',
     },
   });
 });

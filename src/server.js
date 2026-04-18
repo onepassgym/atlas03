@@ -18,6 +18,8 @@ const crawlRoutes     = require('./api/crawlRoutes');
 const gymRoutes       = require('./api/gymRoutes');
 const systemRoutes    = require('./api/systemRoutes');
 const { startScheduler } = require('./services/schedulerService');
+const bus             = require('./services/eventBus');
+const { startWebhookService } = require('./services/webhookService');
 const cfg             = require('../config');
 const logger          = require('./utils/logger');
 const swaggerUi       = require('swagger-ui-express');
@@ -28,7 +30,9 @@ app.set('trust proxy', 1); // Enable trusting proxy headers for rate limiting
 
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,  // Disabled: dashboard is a single-file internal tool
+}));
 app.use(cors());
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
@@ -53,7 +57,12 @@ app.use('/',           indexRoutes);
 app.use('/api/crawl',  crawlRoutes);
 app.use('/api/gyms',   gymRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/events', require('./api/eventRoutes'));
 app.use('/api-docs',   swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// ── Static files + Dashboard ──────────────────────────────────────────────────
+app.use('/public', express.static(path.join(__dirname, 'public'), { maxAge: '1d' }));
+app.get('/dashboard', (_, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
 
 // ── Error handlers ────────────────────────────────────────────────────────────
 app.use((req, res) =>
@@ -73,10 +82,14 @@ app.use((err, req, res, _next) => {
     logger.info(`🚀 Atlas05 API    →  http://localhost:${cfg.server.port}`);
     logger.info(`📦 Media files       →  http://localhost:${cfg.server.port}/media`);
     logger.info(`📋 API docs          →  http://localhost:${cfg.server.port}/api-docs`);
+    logger.info(`📊 Dashboard         →  http://localhost:${cfg.server.port}/dashboard`);
+    logger.info(`📡 SSE events        →  http://localhost:${cfg.server.port}/api/events`);
     logger.info(`${'─'.repeat(50)}\n`);
 
-    // Start the weekly scheduler
+    // Start services
     startScheduler();
+    startWebhookService();
+    bus.publish('system:startup', { port: cfg.server.port, env: cfg.server.env });
   });
 })();
 

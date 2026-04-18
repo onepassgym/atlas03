@@ -11,6 +11,7 @@ const Gym      = require('../db/gymModel');
 const logger   = require('../utils/logger');
 
 const { ok, err, validate } = require('../utils/apiUtils');
+const bus = require('../services/eventBus');
 
 // ── Job dedup helper — prevent duplicate city jobs ────────────────────────────
 async function hasActiveJob(cityName) {
@@ -85,6 +86,7 @@ router.post('/city',
       const jobId = uuidv4();
       await CrawlJob.create({ jobId, type: 'city', input: { cityName, categories }, status: 'queued' });
       await addCityJob(jobId, cityName, categories);
+      bus.publish('job:queued', { jobId, type: 'city', cityName, categoryCount: categories.length });
       ok(res, { message: `City crawl queued for "${cityName}"`, jobId, categoryCount: categories.length, trackAt: `/api/crawl/status/${jobId}` }, 202);
     } catch (e) { logger.error(e.message); err(res, e.message); }
   }
@@ -121,6 +123,7 @@ router.post('/gym',
     try {
       await CrawlJob.create({ jobId, type: 'gym_name', input: { gymName }, status: 'queued' });
       await addGymNameJob(jobId, gymName);
+      bus.publish('job:queued', { jobId, type: 'gym_name', gymName });
       ok(res, { message: `Gym crawl queued for "${gymName}"`, jobId, trackAt: `/api/crawl/status/${jobId}` }, 202);
     } catch (e) { logger.error(e.message); err(res, e.message); }
   }

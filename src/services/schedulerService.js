@@ -10,6 +10,7 @@ const CrawlJob = require('../db/crawlJobModel');
 const Gym = require('../db/gymModel');
 const { addCityJob, addGymNameJob } = require('../queue/queues');
 const { FITNESS_CATEGORIES } = require('../scraper/googleMapsScraper');
+const bus = require('./eventBus');
 
 const SCHEDULE_PATH = path.resolve(__dirname, '../../config/schedule.json');
 
@@ -92,6 +93,7 @@ async function runScheduledCrawl(frequency, reason = 'cron') {
   }
 
   logger.info(`📅 Scheduled: ${queued.length} queued, ${cities.length - queued.length} skipped (already active)\n`);
+  bus.publish('schedule:fired', { frequency, reason, count: queued.length, skipped: cities.length - queued.length });
   return queued;
 }
 

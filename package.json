@@ -13,7 +13,8 @@
     "retry:incomplete": "node scripts/retryFailed.js --incomplete",
     "db:stats": "node scripts/dbStats.js",
     "db:export": "node scripts/dbStats.js --export",
-    "setup": "npx playwright install chromium --with-deps"
+    "setup": "npx playwright install chromium --with-deps",
+    "docs:snapshot": "node scripts/genArchSnapshot.js"
   },
   "dependencies": {
     "axios": "1.7.2",

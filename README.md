@@ -107,6 +107,31 @@ docker-compose up -d --build
 # Ensure MEDIA_BASE_URL in .env points to https://atlas.onepassgym.com/media
 ```
 
+See **[DEPLOY.md](DEPLOY.md)** for full step-by-step guide.
+
+---
+
+## 📚 Documentation
+
+| Document | Description | Updated |
+|----------|-------------|---------|
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | Complete system architecture, module reference, data flow diagrams, config reference | Manual |
+| **[ROADMAP.md](ROADMAP.md)** | Feature upgrade roadmap in 5 phases with status tracking | Manual |
+| **[docs/SNAPSHOT.md](docs/SNAPSHOT.md)** | Auto-generated: file tree, route inventory, model summary, dependency list | Auto (`npm run docs:snapshot`) |
+| **[DEPLOY.md](DEPLOY.md)** | Step-by-step VPS deployment guide | Manual |
+| **[/api-docs](http://localhost:8747/api-docs)** | Interactive Swagger API documentation | Auto (from JSDoc) |
+
+### Keeping Docs Updated
+
+After making structural changes (adding routes, models, dependencies):
+
+```bash
+npm run docs:snapshot   # Regenerates docs/SNAPSHOT.md from live code
+```
+
+> The snapshot script scans all source files and produces a complete inventory.  
+> For design decisions and rationale, update `ARCHITECTURE.md` and `ROADMAP.md` manually.
+
 ---
 
 ## ⚖️ License
