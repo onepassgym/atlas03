@@ -8,6 +8,8 @@
     "dev": "nodemon src/server.js",
     "worker": "node src/queue/worker.js",
     "dev:worker": "nodemon src/queue/worker.js",
+    "worker:chain": "node src/queue/chainWorker.js",
+    "dev:worker:chain": "nodemon src/queue/chainWorker.js",
     "queue:cities": "node scripts/queueCities.js",
     "retry:failed": "node scripts/retryFailed.js",
     "retry:incomplete": "node scripts/retryFailed.js --incomplete",

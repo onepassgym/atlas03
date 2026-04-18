@@ -1,0 +1,93 @@
+[
+  {
+    "slug": "anytime-fitness",
+    "name": "Anytime Fitness",
+    "aliases": ["Anytime", "AF Gym", "Anytime Fitness Club"],
+    "headquarters": "Woodbury, Minnesota, USA",
+    "foundedYear": 2002,
+    "website": "https://www.anytimefitness.com",
+    "storeLocator": {
+      "type": "api",
+      "responseParser": "anytimeFitness"
+    },
+    "crawlFrequency": "monthly"
+  },
+  {
+    "slug": "golds-gym",
+    "name": "Gold's Gym",
+    "aliases": ["Golds Gym", "Gold Gym", "Gold's Fitness"],
+    "headquarters": "Dallas, Texas, USA",
+    "foundedYear": 1965,
+    "website": "https://www.goldsgym.com",
+    "storeLocator": {
+      "type": "api",
+      "responseParser": "goldsGym"
+    },
+    "crawlFrequency": "monthly"
+  },
+  {
+    "slug": "planet-fitness",
+    "name": "Planet Fitness",
+    "aliases": ["PF", "Planet Fitness Club"],
+    "headquarters": "Hampton, New Hampshire, USA",
+    "foundedYear": 1992,
+    "website": "https://www.planetfitness.com",
+    "storeLocator": {
+      "type": "api",
+      "responseParser": "planetFitness"
+    },
+    "crawlFrequency": "monthly"
+  },
+  {
+    "slug": "snap-fitness",
+    "name": "Snap Fitness",
+    "aliases": ["Snap Fitness 24/7", "Snap Gym"],
+    "headquarters": "Chanhassen, Minnesota, USA",
+    "foundedYear": 2003,
+    "website": "https://www.snapfitness.com",
+    "storeLocator": {
+      "type": "api",
+      "responseParser": "snapFitness"
+    },
+    "crawlFrequency": "monthly"
+  },
+  {
+    "slug": "f45-training",
+    "name": "F45 Training",
+    "aliases": ["F45", "F45 Fitness", "F45 Studio"],
+    "headquarters": "Austin, Texas, USA",
+    "foundedYear": 2013,
+    "website": "https://f45training.com",
+    "storeLocator": {
+      "type": "api",
+      "responseParser": "f45Training"
+    },
+    "crawlFrequency": "monthly"
+  },
+  {
+    "slug": "cult-fit",
+    "name": "Cult.fit",
+    "aliases": ["CureFit", "Cult Fitness", "Cult Gym", "cult.fit"],
+    "headquarters": "Bangalore, Karnataka, India",
+    "foundedYear": 2016,
+    "website": "https://www.cult.fit",
+    "storeLocator": {
+      "type": "api",
+      "responseParser": "cultFit"
+    },
+    "crawlFrequency": "monthly"
+  },
+  {
+    "slug": "orangetheory",
+    "name": "Orangetheory Fitness",
+    "aliases": ["OTF", "Orange Theory", "Orangetheory"],
+    "headquarters": "Boca Raton, Florida, USA",
+    "foundedYear": 2010,
+    "website": "https://www.orangetheory.com",
+    "storeLocator": {
+      "type": "api",
+      "responseParser": "orangetheory"
+    },
+    "crawlFrequency": "monthly"
+  }
+]

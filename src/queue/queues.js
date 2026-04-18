@@ -36,6 +36,7 @@ function makeQueue(name, jobOpts = {}) {
 }
 
 const crawlQueue = makeQueue('atlas05-crawl');
+const chainCrawlQueue = makeQueue('atlas05-chain-crawl');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,27 @@ async function getQueueStats() {
     crawlQueue.getCompletedCount(),
     crawlQueue.getFailedCount(),
     crawlQueue.getDelayedCount(),
+  ]);
+  return { waiting, active, completed, failed, delayed };
+}
+
+async function addChainJob(jobId, chainSlug, chainName, countries = []) {
+  const job = await chainCrawlQueue.add(
+    'chain-crawl',
+    { type: 'chain', jobId, input: { chainSlug, chainName, countries } },
+    { jobId, priority: 5 }
+  );
+  logger.info(`📥 Queued chain: ${chainName} [${chainSlug}] (BullMQ #${job.id})`);
+  return job;
+}
+
+async function getChainQueueStats() {
+  const [waiting, active, completed, failed, delayed] = await Promise.all([
+    chainCrawlQueue.getWaitingCount(),
+    chainCrawlQueue.getActiveCount(),
+    chainCrawlQueue.getCompletedCount(),
+    chainCrawlQueue.getFailedCount(),
+    chainCrawlQueue.getDelayedCount(),
   ]);
   return { waiting, active, completed, failed, delayed };
 }
@@ -138,9 +160,12 @@ async function removeBullJob(jobId) {
 
 module.exports = {
   crawlQueue,
+  chainCrawlQueue,
   addCityJob,
   addGymNameJob,
+  addChainJob,
   getQueueStats,
+  getChainQueueStats,
   getQueueJobStatus,
   getBullJobStatus: getQueueJobStatus,
   clearCrawlQueue,

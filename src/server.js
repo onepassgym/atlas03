@@ -16,6 +16,7 @@ const { connectDB }   = require('./db/connection');
 const indexRoutes     = require('./api/indexRoutes');
 const crawlRoutes     = require('./api/crawlRoutes');
 const gymRoutes       = require('./api/gymRoutes');
+const chainRoutes     = require('./api/chainRoutes');
 const systemRoutes    = require('./api/systemRoutes');
 const { startScheduler } = require('./services/schedulerService');
 const bus             = require('./services/eventBus');
@@ -63,10 +64,11 @@ app.use('/api-docs',   swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 // Base API authentication
 app.use('/api',        authMiddleware);
 
-app.use('/api/crawl',  crawlRoutes);
-app.use('/api/gyms',   gymRoutes);
-app.use('/api/system', systemRoutes);
-app.use('/api/events', require('./api/eventRoutes'));
+app.use('/api/crawl',   crawlRoutes);
+app.use('/api/gyms',    gymRoutes);
+app.use('/api/chains',  chainRoutes);
+app.use('/api/system',  systemRoutes);
+app.use('/api/events',  require('./api/eventRoutes'));
 
 // ── Static files + Dashboard ──────────────────────────────────────────────────
 app.use('/public', express.static(path.join(__dirname, 'public'), { maxAge: '1d' }));
@@ -106,6 +108,25 @@ app.use((err, req, res, _next) => {
     // Start services
     startScheduler();
     startWebhookService();
+
+    // Seed gym chains if not already in DB
+    try {
+      const GymChain = require('./db/gymChainModel');
+      const chainsConfig = require('../config/chains.json');
+      let seeded = 0;
+      for (const chainData of chainsConfig) {
+        const result = await GymChain.findOneAndUpdate(
+          { slug: chainData.slug },
+          { $setOnInsert: chainData },
+          { upsert: true, new: true, rawResult: true },
+        );
+        if (result.lastErrorObject?.updatedExisting === false) seeded++;
+      }
+      if (seeded > 0) logger.info(`🌱 Seeded ${seeded} new gym chain(s)`);
+    } catch (seedErr) {
+      logger.warn(`Chain seed skipped: ${seedErr.message}`);
+    }
+
     bus.publish('system:startup', { port: cfg.server.port, env: cfg.server.env });
   });
 })();
