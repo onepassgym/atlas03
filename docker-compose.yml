@@ -1,16 +1,19 @@
 services:
 
   api:
-    build: .
-    container_name: atlas05-api
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: atlas06-api
     restart: unless-stopped
     ports:
       - "8747:8747"
     env_file: .env
     environment:
-      - MONGODB_URI=mongodb://mongo:27017/atlas05
+      - MONGODB_URI=mongodb://mongo:27017/atlas06
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - NODE_ENV=production
     volumes:
       - ./media:/app/media
       - ./logs:/app/logs
@@ -26,14 +29,17 @@ services:
       retries: 3
 
   worker:
-    build: .
-    container_name: atlas05-worker
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atlas06-worker
     restart: unless-stopped
     env_file: .env
     environment:
-      - MONGODB_URI=mongodb://mongo:27017/atlas05
+      - MONGODB_URI=mongodb://mongo:27017/atlas06
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - NODE_ENV=production
     volumes:
       - ./media:/app/media
       - ./logs:/app/logs
@@ -45,7 +51,7 @@ services:
 
   mongo:
     image: mongo:7.0
-    container_name: atlas05-mongo
+    container_name: atlas06-mongo
     restart: unless-stopped
     ports:
       - "27328:27017"
@@ -60,7 +66,7 @@ services:
 
   redis:
     image: redis:7.2-alpine
-    container_name: atlas05-redis
+    container_name: atlas06-redis
     restart: unless-stopped
     ports:
       - "6847:6379"

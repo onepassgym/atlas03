@@ -1,0 +1,45 @@
+import { useApp } from '../context/AppContext';
+import { getBaseUrl } from '../api/client';
+import { Dumbbell, Sun, Moon } from 'lucide-react';
+import styles from './Header.module.css';
+
+export default function Header() {
+  const { env, switchEnv, connected, isProdHost, theme, toggleTheme } = useApp();
+
+  return (
+    <header className={styles.header} id="app-header">
+      <div className={styles.headerLeft}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span className={styles.logo}><Dumbbell size={20} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />Atlas06</span>
+          <span className={styles.logoSub}>Mission Control</span>
+        </div>
+        {!isProdHost && (
+          <div className={styles.envToggle}>
+            <button className={`${styles.envBtn} ${env === 'local' ? styles.active : ''}`} onClick={() => switchEnv('local')}>Local</button>
+            <button className={`${styles.envBtn} ${env === 'prod' ? styles.active : ''}`} onClick={() => switchEnv('prod')}>Production</button>
+          </div>
+        )}
+      </div>
+      <div className={styles.headerRight}>
+        <div className={styles.envStatus}>
+          <span style={{ opacity: 0.5 }}>API:</span>
+          <span>{(getBaseUrl() || window.location.origin).replace(/https?:\/\//, '')}</span>
+        </div>
+        <button
+          className="theme-toggle"
+          onClick={toggleTheme}
+          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          aria-label="Toggle theme"
+        >
+          <div className="theme-toggle-knob">
+            {theme === 'dark' ? <Moon size={10} /> : <Sun size={10} />}
+          </div>
+        </button>
+        <div className={styles.connectionBadge}>
+          <span className={`${styles.connectionDot} ${connected ? styles.connected : ''}`} />
+          <span>{connected ? 'Live' : 'Reconnecting…'}</span>
+        </div>
+      </div>
+    </header>
+  );
+}

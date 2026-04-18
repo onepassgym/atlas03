@@ -1,0 +1,261 @@
+import { useState, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import {
+  Building2, Dumbbell, Calendar, Globe2, Brain, BarChart3, RefreshCw,
+  FlaskConical, Trash2, XCircle, Plus, Rocket
+} from 'lucide-react';
+import Modal from '../components/Modal';
+import { api } from '../api/client';
+import { useApp } from '../context/AppContext';
+
+export default function System() {
+  const { toast, logs, clearLogs, chainsCache } = useApp();
+  const [schedule, setSchedule] = useState([]);
+  const [health, setHealth] = useState({});
+  const [addCity, setAddCity] = useState({ name: '', frequency: 'weekly' });
+
+  // Modals
+  const [crawlCityModal, setCrawlCityModal] = useState(false);
+  const [crawlCityInput, setCrawlCityInput] = useState('');
+  const [crawlGymModal, setCrawlGymModal] = useState(false);
+  const [crawlGymInput, setCrawlGymInput] = useState('');
+  const [chainCrawlModal, setChainCrawlModal] = useState(false);
+  const [chainCrawlSlug, setChainCrawlSlug] = useState('');
+  const [chainCrawlCountries, setChainCrawlCountries] = useState('');
+
+  const fetchSchedule = useCallback(async () => {
+    try {
+      const res = await api.get('/api/system/schedule');
+      if (res?.success) setSchedule(res.schedule?.cities || []);
+    } catch {}
+  }, []);
+
+  const fetchHealth = useCallback(async () => {
+    try {
+      const [evtRes, qRes, cqRes] = await Promise.all([
+        api.get('/api/events/stats').catch(() => ({})),
+        api.get('/api/crawl/queue/stats').catch(() => ({ queue: {} })),
+        api.get('/api/chains/crawl/queue-stats').catch(() => ({ queue: {} })),
+      ]);
+      setHealth({
+        sseClients: evtRes?.sseClients || 0,
+        totalEvents: evtRes?.totalEvents || 0,
+        qActive: qRes?.queue?.active || 0,
+        qWaiting: qRes?.queue?.waiting || 0,
+        chainQ: `${cqRes?.queue?.active || 0}/${cqRes?.queue?.waiting || 0}`,
+      });
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchSchedule(); fetchHealth(); }, [fetchSchedule, fetchHealth]);
+
+  // ── Actions
+  const submitCrawlCity = async () => {
+    if (!crawlCityInput.trim()) return;
+    setCrawlCityModal(false);
+    try {
+      const res = await api.post('/api/crawl/city', { cityName: crawlCityInput });
+      toast(res?.success ? `Queued: ${crawlCityInput}` : (res?.error || 'Failed'), res?.success ? 'success' : 'error');
+      setCrawlCityInput('');
+    } catch { toast('Network error', 'error'); }
+  };
+
+  const submitCrawlGym = async () => {
+    if (!crawlGymInput.trim()) return;
+    setCrawlGymModal(false);
+    try {
+      const res = await api.post('/api/crawl/gym', { gymName: crawlGymInput });
+      toast(res?.message || `Queued: ${crawlGymInput}`, 'success');
+      setCrawlGymInput('');
+    } catch { toast('Network error', 'error'); }
+  };
+
+  const submitChainCrawl = async () => {
+    setChainCrawlModal(false);
+    try {
+      const countries = chainCrawlCountries ? chainCrawlCountries.split(',').map(c => c.trim()).filter(Boolean) : [];
+      const res = await api.post('/api/chains/crawl/start', { chainSlug: chainCrawlSlug, countries });
+      toast(res?.message || 'Chain crawl queued', res?.success !== false ? 'success' : 'error');
+      setChainCrawlCountries('');
+    } catch { toast('Network error', 'error'); }
+  };
+
+  const triggerSchedule = async (freq) => {
+    try { const res = await api.post('/api/system/schedule/trigger', { frequency: freq }); toast(res?.message || 'Triggered', 'success'); } catch { toast('Failed', 'error'); }
+  };
+  const triggerStale = async () => { try { const res = await api.post('/api/system/schedule/trigger/stale'); toast(res?.message || 'Triggered', 'success'); } catch { toast('Failed', 'error'); } };
+  const triggerEnrichment = async () => { try { const res = await api.post('/api/system/schedule/trigger/enrichment'); toast(res?.message || 'Triggered', 'success'); } catch { toast('Failed', 'error'); } };
+  const retryFailed = async () => { try { const res = await api.post('/api/crawl/retry/failed'); toast(res?.message || 'Retrying', 'success'); } catch { toast('Failed', 'error'); } };
+  const clearQueue = async () => { if (!confirm('⚠️ Cancel ALL queued and running jobs?')) return; try { const res = await api.post('/api/crawl/queue/clear'); toast(res?.message || 'Cleared', 'info'); } catch { toast('Failed', 'error'); } };
+  const recalcScores = async () => { if (!confirm('Recalculate quality scores for all gyms?')) return; try { await api.post('/api/system/recalculate-scores'); toast('Recalculation started', 'info'); } catch { toast('Failed', 'error'); } };
+  const vacuumLogs = async () => { if (!confirm('Delete all log files?')) return; try { const res = await api.post('/api/system/vacuum-logs'); toast(res?.message || 'Done', 'info'); } catch { toast('Failed', 'error'); } };
+  const testEvent = async () => { try { await api.post('/api/events/test', {}); toast('Test event sent', 'info'); } catch { toast('Failed', 'error'); } };
+  const tagExisting = async () => {
+    if (!confirm('Tag all existing gyms with matching chain names?')) return;
+    try { const res = await api.post('/api/chains/tag-existing'); toast(res?.message || 'Tagged', 'success'); } catch { toast('Failed', 'error'); }
+  };
+
+  const addScheduleCity = async () => {
+    if (!addCity.name.trim()) return;
+    try {
+      const res = await api.post('/api/system/schedule/city', { name: addCity.name, frequency: addCity.frequency, priority: 3 });
+      toast(res?.message || 'Added', 'success');
+      setAddCity({ name: '', frequency: 'weekly' });
+      fetchSchedule();
+    } catch { toast('Failed', 'error'); }
+  };
+
+  const removeCity = async (name) => {
+    if (!confirm(`Remove "${name}" from schedule?`)) return;
+    try { await api.delete(`/api/system/schedule/city?name=${encodeURIComponent(name)}`); toast(`Removed: ${name}`, 'info'); fetchSchedule(); } catch { toast('Failed', 'error'); }
+  };
+
+  return (
+    <motion.div className="container" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <div className="grid-2">
+        {/* ── Command Center ────── */}
+        <div className="card" style={{ position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, var(--accent), var(--purple), transparent)', animation: 'scanLine 3s ease-in-out infinite' }} />
+          <div className="card-header"><span className="card-title">⌘ Command Center</span><span className="card-icon"><Rocket size={18} /></span></div>
+
+          <CmdGroup label="Crawl Operations">
+            <button className="btn" onClick={() => setCrawlCityModal(true)}><Building2 size={13} /> Crawl City</button>
+            <button className="btn" onClick={() => setCrawlGymModal(true)}><Dumbbell size={13} /> Crawl Gym</button>
+            <button className="btn" onClick={() => triggerSchedule('weekly')}><Calendar size={13} /> Weekly Run</button>
+            <button className="btn" onClick={() => triggerSchedule('all')}><Globe2 size={13} /> All Cities</button>
+          </CmdGroup>
+
+          <CmdGroup label="Chain Operations">
+            <button className="btn purple" onClick={() => { setChainCrawlSlug(chainsCache[0]?.slug || ''); setChainCrawlModal(true); }}>🔗 Crawl Chain</button>
+            <button className="btn purple" onClick={tagExisting}>🏷️ Tag Existing</button>
+          </CmdGroup>
+
+          <CmdGroup label="Data Intelligence">
+            <button className="btn" onClick={recalcScores}><Brain size={13} /> Recalc Scores</button>
+            <button className="btn" onClick={triggerEnrichment}><BarChart3 size={13} /> Enrichment</button>
+            <button className="btn" onClick={triggerStale}><RefreshCw size={13} /> Stale Refresh</button>
+            <button className="btn" onClick={retryFailed}><RefreshCw size={13} /> Retry Failed</button>
+          </CmdGroup>
+
+          <CmdGroup label="System" last>
+            <button className="btn" onClick={testEvent}><FlaskConical size={13} /> Test Event</button>
+            <button className="btn danger" onClick={vacuumLogs}><Trash2 size={13} /> Vacuum Logs</button>
+            <button className="btn danger" onClick={clearQueue}><XCircle size={13} /> Clear Queue</button>
+          </CmdGroup>
+        </div>
+
+        {/* ── Schedule Editor ────── */}
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">📅 Schedule Editor</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>{schedule.length} cities</span>
+          </div>
+          <div style={{ maxHeight: 260, overflowY: 'auto', scrollbarWidth: 'thin' }}>
+            <table className="data-table" style={{ fontSize: 12 }}>
+              <thead><tr><th>City</th><th>Frequency</th><th>Priority</th><th></th></tr></thead>
+              <tbody>
+                {schedule.map(c => (
+                  <tr key={c.name}>
+                    <td style={{ color: 'var(--text-primary)' }}>{c.name}</td>
+                    <td><span className={`freq-badge ${c.frequency}`}>{c.frequency}</span></td>
+                    <td>P{c.priority}</td>
+                    <td><button className="btn sm danger" onClick={() => removeCity(c.name)}>🗑️</button></td>
+                  </tr>
+                ))}
+                {schedule.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No cities scheduled</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'flex-end' }}>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-muted)' }}>City Name</span>
+              <input className="input" placeholder="e.g. Pune, Maharashtra, India" value={addCity.name} onChange={e => setAddCity({...addCity, name: e.target.value})} onKeyDown={e => e.key === 'Enter' && addScheduleCity()} />
+            </div>
+            <div>
+              <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-muted)' }}>Frequency</span>
+              <select className="input" value={addCity.frequency} onChange={e => setAddCity({...addCity, frequency: e.target.value})}>
+                <option>weekly</option><option>biweekly</option><option>monthly</option>
+              </select>
+            </div>
+            <button className="btn primary sm" onClick={addScheduleCity}><Plus size={12} /> Add</button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Logs ────── */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-header">
+          <span className="card-title">Live System Logs</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button className="btn sm" onClick={clearLogs}>Clear</button>
+            <span className="card-icon">🪵</span>
+          </div>
+        </div>
+        <div style={{ height: 280, overflowY: 'auto', fontFamily: 'var(--mono)', fontSize: 11, background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 10, display: 'flex', flexDirection: 'column', gap: 4, scrollbarWidth: 'thin' }}>
+          {logs.length === 0 ? (
+            <div className="empty-state"><div className="empty-state-icon">🪵</div><div>Waiting for log stream…</div></div>
+          ) : logs.slice(0, 100).map((l, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, lineHeight: 1.4, borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: 2 }}>
+              <span style={{ color: 'var(--text-muted)', minWidth: 65 }}>{l.timestamp?.split(' ')[1] || ''}</span>
+              <span style={{ fontWeight: 700, width: 45, textTransform: 'uppercase', color: l.level === 'error' ? 'var(--danger)' : l.level === 'warn' ? 'var(--warning)' : 'var(--success)' }}>{l.level || 'info'}</span>
+              <span style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{l.message || ''}{l.stack ? '\n' + l.stack : ''}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Health ────── */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-header"><span className="card-title">System Health</span><span className="card-icon">💚</span></div>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-secondary)' }}>
+          <span>SSE Clients: <strong>{health.sseClients ?? '—'}</strong></span>
+          <span>Events (buffer): <strong>{health.totalEvents ?? '—'}</strong></span>
+          <span>Queue Active: <strong>{health.qActive ?? '—'}</strong></span>
+          <span>Queue Waiting: <strong>{health.qWaiting ?? '—'}</strong></span>
+          <span>Chain Queue: <strong>{health.chainQ ?? '—'}</strong></span>
+        </div>
+      </div>
+
+      {/* ── Modals ────── */}
+      <Modal open={crawlCityModal} onClose={() => setCrawlCityModal(false)} title="🏙️ Queue City Crawl">
+        <input className="input" placeholder="e.g. Mumbai, Maharashtra, India" value={crawlCityInput} onChange={e => setCrawlCityInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitCrawlCity()} autoFocus />
+        <div className="modal-actions">
+          <button className="btn" onClick={() => setCrawlCityModal(false)}>Cancel</button>
+          <button className="btn primary" onClick={submitCrawlCity}>Queue Crawl</button>
+        </div>
+      </Modal>
+
+      <Modal open={crawlGymModal} onClose={() => setCrawlGymModal(false)} title="🏋️ Queue Specific Gym">
+        <input className="input" placeholder="e.g. Gold's Gym Andheri Mumbai" value={crawlGymInput} onChange={e => setCrawlGymInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitCrawlGym()} autoFocus />
+        <div className="modal-actions">
+          <button className="btn" onClick={() => setCrawlGymModal(false)}>Cancel</button>
+          <button className="btn primary" onClick={submitCrawlGym}>Queue Gym</button>
+        </div>
+      </Modal>
+
+      <Modal open={chainCrawlModal} onClose={() => setChainCrawlModal(false)} title="🔗 Crawl Chain">
+        <select className="input" value={chainCrawlSlug} onChange={e => setChainCrawlSlug(e.target.value)}>
+          {chainsCache.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+        </select>
+        <input className="input" placeholder="Countries (optional, comma-sep): IN, US, AU" value={chainCrawlCountries} onChange={e => setChainCrawlCountries(e.target.value)} />
+        <div className="modal-actions">
+          <button className="btn" onClick={() => setChainCrawlModal(false)}>Cancel</button>
+          <button className="btn primary" onClick={submitChainCrawl}><Rocket size={14} /> Start Crawl</button>
+        </div>
+      </Modal>
+    </motion.div>
+  );
+}
+
+function CmdGroup({ label, children, last }) {
+  return (
+    <div style={{ marginBottom: last ? 0 : 16 }}>
+      <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {label}<span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, var(--border), transparent)' }} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
+        {children}
+      </div>
+    </div>
+  );
+}

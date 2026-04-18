@@ -3,12 +3,15 @@ const mongoose = require('mongoose');
 
 const CrawlJobSchema = new mongoose.Schema({
   jobId:  { type: String, required: true, unique: true },
-  type:   { type: String, enum: ['city', 'gym_name', 'retry'], default: 'city' },
+  type:   { type: String, enum: ['city', 'gym_name', 'retry', 'chain'], default: 'city' },
 
   input: {
     cityName:   String,
     gymName:    String,
     categories: [String],
+    chainSlug:  String,        // e.g. "anytime-fitness"
+    chainName:  String,        // e.g. "Anytime Fitness"
+    countries:  [String],      // optional filter: ["US","IN","AU"]
   },
 
   status: {

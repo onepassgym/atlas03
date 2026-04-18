@@ -1,4 +1,4 @@
-# 🏗️ Atlas05 — Architecture Reference
+# 🏗️ Atlas06 — Architecture Reference
 
 > **Living document.** Keep this updated as modules change.  
 > Run `node scripts/genArchSnapshot.js` to auto-regenerate the inventory sections.  
@@ -33,11 +33,12 @@
 
 ## System Overview
 
-Atlas05 is an **API-first Google Maps fitness venue scraper** that operates as two separate Node.js processes backed by MongoDB and Redis.
+Atlas06 is an **API-first Google Maps fitness venue scraper** that operates as two separate Node.js processes backed by MongoDB and Redis.
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| API Server | Express 4 + Swagger | REST API for crawl management, gym data, scheduling |
+| API Server | Express 4 | REST API for crawl management, gym data, scheduling |
+| Dashboard | React 19 + Vite 6 | Mission Control SPA for real-time monitoring |
 | Worker | BullMQ Worker | Processes crawl jobs using Playwright |
 | Database | MongoDB 7 (Mongoose 8) | Gym data, reviews, photos, crawl jobs, change logs |
 | Queue | Redis 7 + BullMQ 5 | Job queue with priority, retry, cancellation |
@@ -60,17 +61,18 @@ Atlas05 is an **API-first Google Maps fitness venue scraper** that operates as t
 │                         API SERVER (server.js)                      │
 │                                                                     │
 │  Express App                                                        │
-│  ├── indexRoutes     GET /           GET /health                    │
+│  ├── indexRoutes     GET / (redirects to /dashboard)               │
 │  ├── crawlRoutes     POST|GET /api/crawl/*                         │
 │  ├── gymRoutes       GET|PATCH /api/gyms/*                         │
 │  ├── systemRoutes    GET|POST|DELETE /api/system/*                  │
-│  ├── swagger-ui      GET /api-docs                                 │
+│  ├── eventRoutes     GET /api/events                               │
+│  ├── dashboard SPA   GET /dashboard/*                              │
 │  └── static media    GET /media/*                                  │
 │                                                                     │
 │  node-cron scheduler (5 cron jobs)                                 │
 │  └── Produces BullMQ jobs → Redis                                  │
 └──────────────────┬──────────────────────────────────────────────────┘
-                   │  BullMQ Queue (atlas05-crawl)
+                   │  BullMQ Queue (atlas06-crawl)
                    │  Redis 7 (:6847)
 ┌──────────────────▼──────────────────────────────────────────────────┐
 │                       WORKER (queue/worker.js)                      │
@@ -88,7 +90,7 @@ Atlas05 is an **API-first Google Maps fitness venue scraper** that operates as t
 └──────────────────┬──────────────────────────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────────────────────┐
-│                    MONGODB 7 (atlas06 / atlas05 DB)                 │
+│                    MONGODB 7 (atlas06 / atlas06 DB)                 │
 │                                                                     │
 │  Collections:                                                       │
 │  ├── gyms              Main venue records (194-line schema)         │
@@ -108,7 +110,7 @@ Atlas05 is an **API-first Google Maps fitness venue scraper** that operates as t
 ## Directory Map
 
 ```
-atlas05/
+atlas06/
 ├── config/
 │   ├── index.js                 # Centralized config (env-aware dev/prod)
 │   └── schedule.json            # City crawl schedule + staleness thresholds
@@ -131,12 +133,10 @@ atlas05/
 ├── src/
 │   ├── server.js                # Express app entry point
 │   ├── api/
-│   │   ├── indexRoutes.js       # GET / (docs), GET /health
+│   │   ├── indexRoutes.js       # GET / (redirect), GET /health
 │   │   ├── crawlRoutes.js       # Crawl CRUD + cancel + retry
 │   │   ├── gymRoutes.js         # Gym listing, search, geo, export
 │   │   └── systemRoutes.js      # Logs, schedule, triggers
-│   ├── config/
-│   │   └── swagger.js           # OpenAPI 3.0 spec config
 │   ├── db/
 │   │   ├── connection.js        # Mongoose connect + auto-reconnect
 │   │   ├── ensureIndexes.js     # Imperative index creation on startup
@@ -209,14 +209,14 @@ atlas05/
 | `queues.js` | `addCityJob()`, `addGymNameJob()`, `getQueueStats()`, `requestCancelJob()`, `isJobCancelled()`, etc. | BullMQ queue management + Redis cancel flags |
 | `worker.js` | (auto-starts) | Processes `city-crawl` and `gym-name-crawl` jobs |
 
-**Queue name:** `atlas05-crawl`  
-**Cancellation:** Redis key `atlas05:cancel:{jobId}` with 1-hour TTL
+**Queue name:** `atlas06-crawl`  
+**Cancellation:** Redis key `atlas06:cancel:{jobId}` with 1-hour TTL
 
 ### Database Layer
 
 | Model | Collection | Key Fields | Indexes |
 |-------|-----------|-----------|---------|
-| `Gym` | `gyms` | name, slug, placeId, geoLocation, location, rating, contact, openingHours, atlas05 platform fields | 11 indexes incl. 2dsphere, text search |
+| `Gym` | `gyms` | name, slug, placeId, geoLocation, location, rating, contact, openingHours, atlas06 platform fields | 11 indexes incl. 2dsphere, text search |
 | `Review` | `gym_reviews` | gymId, reviewId (unique), authorName, rating, text, publishedAt | gymId, reviewId |
 | `Photo` | `gym_photos` | gymId, publicUrl (unique), localPath, thumbnailUrl, dimensions | gymId, publicUrl |
 | `CrawlMeta` | `gym_crawl_meta` | gymId (unique), firstCrawledAt, lastCrawledAt, dataCompleteness | gymId, jobId |
@@ -288,7 +288,6 @@ name, address, contact.phone, contact.email, contact.website
 | `config/index.js` | Environment-aware config builder (dev/prod auto-selection) |
 | `config/schedule.json` | 21 cities with frequency/priority + staleness/enrichment thresholds |
 | `.env` | Port, DB URIs, Redis, scraper behavior, rate limits |
-| `src/config/swagger.js` | OpenAPI 3.0 spec generation from JSDoc annotations |
 
 ---
 
@@ -320,7 +319,7 @@ name, address, contact.phone, contact.email, contact.website
 | `GET` | `/stats` | None | Aggregate stats (total, by category, top cities, avg rating) |
 | `GET` | `/export` | None | Stream all gyms as JSON (cursor-based) |
 | `GET` | `/:id` | None | Full gym detail with populated reviews/photos/crawlMeta |
-| `PATCH` | `/:id` | None | Update `atlas05` platform fields only |
+| `PATCH` | `/:id` | None | Update `atlas06` platform fields only |
 
 ### System Routes (`/api/system`)
 
@@ -470,7 +469,7 @@ If FOUND → UPDATE path:
 | ID | Severity | Description | File(s) |
 |----|----------|-------------|---------|
 | TD-01 | 🔴 Critical | VPS credentials in `.env` (password in plaintext) | `.env:25` |
-| TD-02 | 🟡 Medium | `.env` references `atlas06` DB but project is `atlas05` | `.env`, `config/index.js` |
+| TD-02 | 🟡 Medium | `.env` references `atlas06` DB but project is `atlas06` | `.env`, `config/index.js` |
 | TD-03 | 🟡 Medium | Stray `{src` directory at project root (broken mkdir) | Project root |
 | TD-04 | 🟡 Medium | `dedup.js` `mergeGymData()` is deprecated but still exported | `src/utils/dedup.js:78` |
 | TD-05 | 🟡 Medium | `upsertGym.js` always writes `$set` even when nothing changed | `src/db/upsertGym.js:461` |

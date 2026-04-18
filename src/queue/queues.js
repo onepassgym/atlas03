@@ -35,7 +35,8 @@ function makeQueue(name, jobOpts = {}) {
   return q;
 }
 
-const crawlQueue = makeQueue('atlas05-crawl');
+const crawlQueue = makeQueue('atlas06-crawl');
+const chainCrawlQueue = makeQueue('atlas06-chain-crawl');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,27 @@ async function getQueueStats() {
   return { waiting, active, completed, failed, delayed };
 }
 
+async function addChainJob(jobId, chainSlug, chainName, countries = []) {
+  const job = await chainCrawlQueue.add(
+    'chain-crawl',
+    { type: 'chain', jobId, input: { chainSlug, chainName, countries } },
+    { jobId, priority: 5 }
+  );
+  logger.info(`📥 Queued chain: ${chainName} [${chainSlug}] (BullMQ #${job.id})`);
+  return job;
+}
+
+async function getChainQueueStats() {
+  const [waiting, active, completed, failed, delayed] = await Promise.all([
+    chainCrawlQueue.getWaitingCount(),
+    chainCrawlQueue.getActiveCount(),
+    chainCrawlQueue.getCompletedCount(),
+    chainCrawlQueue.getFailedCount(),
+    chainCrawlQueue.getDelayedCount(),
+  ]);
+  return { waiting, active, completed, failed, delayed };
+}
+
 async function getQueueJobStatus(jobId) {
   try {
     const job = await crawlQueue.getJob(jobId);
@@ -95,7 +117,7 @@ async function clearCrawlQueue() {
  * TTL of 1 hour prevents stale flags from accumulating.
  */
 async function requestCancelJob(jobId) {
-  await redis.set(`atlas05:cancel:${jobId}`, '1', 'EX', 3600);
+  await redis.set(`atlas06:cancel:${jobId}`, '1', 'EX', 3600);
   logger.info(`🛑 Cancel requested for job: ${jobId}`);
 }
 
@@ -105,7 +127,7 @@ async function requestCancelJob(jobId) {
  */
 async function isJobCancelled(jobId) {
   try {
-    const flag = await redis.get(`atlas05:cancel:${jobId}`);
+    const flag = await redis.get(`atlas06:cancel:${jobId}`);
     return flag === '1';
   } catch (_) {
     return false;
@@ -116,7 +138,7 @@ async function isJobCancelled(jobId) {
  * Clear the cancellation flag after the worker has handled it.
  */
 async function clearCancelFlag(jobId) {
-  await redis.del(`atlas05:cancel:${jobId}`);
+  await redis.del(`atlas06:cancel:${jobId}`);
 }
 
 /**
@@ -138,9 +160,12 @@ async function removeBullJob(jobId) {
 
 module.exports = {
   crawlQueue,
+  chainCrawlQueue,
   addCityJob,
   addGymNameJob,
+  addChainJob,
   getQueueStats,
+  getChainQueueStats,
   getQueueJobStatus,
   getBullJobStatus: getQueueJobStatus,
   clearCrawlQueue,

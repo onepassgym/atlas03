@@ -16,6 +16,7 @@ const { connectDB }   = require('./db/connection');
 const indexRoutes     = require('./api/indexRoutes');
 const crawlRoutes     = require('./api/crawlRoutes');
 const gymRoutes       = require('./api/gymRoutes');
+const chainRoutes     = require('./api/chainRoutes');
 const systemRoutes    = require('./api/systemRoutes');
 const { startScheduler } = require('./services/schedulerService');
 const bus             = require('./services/eventBus');
@@ -23,8 +24,6 @@ const { startWebhookService } = require('./services/webhookService');
 const cfg             = require('../config');
 const logger          = require('./utils/logger');
 const authMiddleware  = require('./middleware/auth');
-const swaggerUi       = require('swagger-ui-express');
-const swaggerSpec     = require('./config/swagger');
 
 const app = express();
 app.set('trust proxy', 1); // Enable trusting proxy headers for rate limiting
@@ -58,28 +57,23 @@ app.use('/media', express.static(mediaPath, { maxAge: '7d' }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/',           indexRoutes);
-app.use('/api-docs',   swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/',           indexRoutes);
 
 // Base API authentication
 app.use('/api',        authMiddleware);
 
-app.use('/api/crawl',  crawlRoutes);
-app.use('/api/gyms',   gymRoutes);
-app.use('/api/system', systemRoutes);
-app.use('/api/events', require('./api/eventRoutes'));
+app.use('/api/crawl',   crawlRoutes);
+app.use('/api/gyms',    gymRoutes);
+app.use('/api/chains',  chainRoutes);
+app.use('/api/system',  systemRoutes);
+app.use('/api/events',  require('./api/eventRoutes'));
 
 // ── Static files + Dashboard ──────────────────────────────────────────────────
-app.use('/public', express.static(path.join(__dirname, 'public'), { maxAge: '1d' }));
-app.get('/dashboard', async (_, res) => {
-  try {
-    const htmlPath = path.join(__dirname, 'public', 'dashboard.html');
-    let html = await fs.promises.readFile(htmlPath, 'utf8');
-    html = html.replace('__SERVER_ENV__', cfg.server.env);
-    res.send(html);
-  } catch (err) {
-    res.status(500).send('Error loading dashboard');
-  }
-});
+
+// Serve Vite-built dashboard SPA
+const dashboardPath = path.join(__dirname, '..', 'dashboard', 'dist');
+app.use('/dashboard', express.static(dashboardPath, { maxAge: '7d' }));
+app.get('/dashboard/*', (_, res) => res.sendFile(path.join(dashboardPath, 'index.html')));
 
 // ── Error handlers ────────────────────────────────────────────────────────────
 app.use((req, res) =>
@@ -96,9 +90,8 @@ app.use((err, req, res, _next) => {
 
   app.listen(cfg.server.port, async () => {
     logger.info(`\n${'─'.repeat(50)}`);
-    logger.info(`🚀 Atlas05 API    →  http://localhost:${cfg.server.port}`);
+    logger.info(`🚀 Atlas06 API    →  http://localhost:${cfg.server.port}`);
     logger.info(`📦 Media files       →  http://localhost:${cfg.server.port}/media`);
-    logger.info(`📋 API docs          →  http://localhost:${cfg.server.port}/api-docs`);
     logger.info(`📊 Dashboard         →  http://localhost:${cfg.server.port}/dashboard`);
     logger.info(`📡 SSE events        →  http://localhost:${cfg.server.port}/api/events`);
     logger.info(`${'─'.repeat(50)}\n`);
@@ -106,6 +99,25 @@ app.use((err, req, res, _next) => {
     // Start services
     startScheduler();
     startWebhookService();
+
+    // Seed gym chains if not already in DB
+    try {
+      const GymChain = require('./db/gymChainModel');
+      const chainsConfig = require('../config/chains.json');
+      let seeded = 0;
+      for (const chainData of chainsConfig) {
+        const result = await GymChain.findOneAndUpdate(
+          { slug: chainData.slug },
+          { $setOnInsert: chainData },
+          { upsert: true, new: true, rawResult: true },
+        );
+        if (result.lastErrorObject?.updatedExisting === false) seeded++;
+      }
+      if (seeded > 0) logger.info(`🌱 Seeded ${seeded} new gym chain(s)`);
+    } catch (seedErr) {
+      logger.warn(`Chain seed skipped: ${seedErr.message}`);
+    }
+
     bus.publish('system:startup', { port: cfg.server.port, env: cfg.server.env });
   });
 })();

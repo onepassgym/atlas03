@@ -120,8 +120,8 @@ const GymSchema = new mongoose.Schema({
     negative: [String]
   },
 
-  // Atlas05 platform fields
-  atlas05: {
+  // Atlas06 platform fields
+  atlas06: {
     isListed:   { type: Boolean, default: false },
     isVerified: { type: Boolean, default: false },
     isPartner:  { type: Boolean, default: false },
@@ -129,6 +129,12 @@ const GymSchema = new mongoose.Schema({
     partnerSince:Date,
     planIds:    [String],
   },
+
+  // Chain Identity
+  chainId:       { type: mongoose.Schema.Types.ObjectId, ref: 'GymChain', default: null },
+  chainSlug:     { type: String, default: null },      // denormalized for fast queries
+  chainName:     { type: String, default: null },      // denormalized for display
+  isChainMember: { type: Boolean, default: false },
 
   // Job reference
   areaName:   String,
@@ -184,7 +190,9 @@ GymSchema.index({ rating: -1 });
 GymSchema.index({ qualityScore: -1 });
 GymSchema.index({ sentimentScore: -1 });
 GymSchema.index({ 'crawlMeta.crawlStatus': 1 });
-GymSchema.index({ 'atlas05.isListed': 1 });
+GymSchema.index({ 'atlas06.isListed': 1 });
+GymSchema.index({ chainSlug: 1 });
+GymSchema.index({ isChainMember: 1 });
 
 // ── Completeness helper ───────────────────────────────────────────────────────
 

@@ -7,3 +7,5 @@ media/videos/
 gyms-export.json
 *.log
 .DS_Store
+dashboard/dist/
+dashboard/node_modules/
