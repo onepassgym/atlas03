@@ -111,6 +111,15 @@ const GymSchema = new mongoose.Schema({
   temporarilyClosed: { type: Boolean, default: false },
   claimedByOwner:    { type: Boolean, default: false },
 
+  // Data Intelligence (Phase 2)
+  qualityScore:   { type: Number, default: 0 },
+  scoreBreakdown: mongoose.Schema.Types.Mixed,
+  sentimentScore: { type: Number, default: 0 },
+  sentimentTags:  {
+    positive: [String],
+    negative: [String]
+  },
+
   // Atlas05 platform fields
   atlas05: {
     isListed:   { type: Boolean, default: false },
@@ -172,6 +181,8 @@ GymSchema.index({ lat: 1, lng: 1 });
 GymSchema.index({ name: 'text', description: 'text', areaName: 'text' });
 GymSchema.index({ areaName: 1, category: 1 });
 GymSchema.index({ rating: -1 });
+GymSchema.index({ qualityScore: -1 });
+GymSchema.index({ sentimentScore: -1 });
 GymSchema.index({ 'crawlMeta.crawlStatus': 1 });
 GymSchema.index({ 'atlas05.isListed': 1 });
 

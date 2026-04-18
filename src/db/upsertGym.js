@@ -25,6 +25,8 @@ const Category       = require('./categoryModel');
 const Amenity        = require('./amenityModel');
 const PlaceType      = require('./placeTypeModel');
 const GymChangeLog = require('./gymChangeLogModel');
+const { calculateQualityScore } = require('../services/intelligence/scoring');
+const { analyzeGymSentiment } = require('../services/intelligence/sentiment');
 const logger       = require('../utils/logger');
 const slugify      = require('slugify');
 
@@ -374,6 +376,15 @@ async function upsertGym(crawledData) {
     delete normalizedData.amenities;
     delete normalizedData.crawlMeta;
 
+    // ── Apply Data Intelligence (Phase 2) ────────────────────────────────────
+    const qScore = calculateQualityScore(normalizedData);
+    normalizedData.qualityScore = qScore.score;
+    normalizedData.scoreBreakdown = qScore.breakdown;
+
+    const sentiment = analyzeGymSentiment(crawledData.reviews);
+    normalizedData.sentimentScore = sentiment.score;
+    normalizedData.sentimentTags = sentiment.tags;
+
     // ── INSERT path ──────────────────────────────────────────────────────────
     if (!existing) {
       if (normalizedData.lat != null && normalizedData.lng != null) {
@@ -441,6 +452,16 @@ async function upsertGym(crawledData) {
     $set.categoryId = categoryId;
     $set.amenityIds = amenityIds;
     $set.parsed = true;
+
+    // Intelligence Data
+    $set.qualityScore = normalizedData.qualityScore;
+    $set.scoreBreakdown = normalizedData.scoreBreakdown;
+    // We only update sentiment if we have reviews crawled this cycle,
+    // though realistically we should append and re-analyze. Since we merge
+    // reviews, let's update sentiment using only the new fetched batch as a proxy, 
+    // or just overwrite if it's there. 
+    $set.sentimentScore = normalizedData.sentimentScore;
+    $set.sentimentTags = normalizedData.sentimentTags;
 
     // 4. Also rebuild GeoJSON location
     const location = buildLocation(crawledData.lat, crawledData.lng);

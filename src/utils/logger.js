@@ -4,6 +4,7 @@ const DailyRotateFile = require('winston-daily-rotate-file');
 const path = require('path');
 const fs   = require('fs');
 const cfg  = require('../../config');
+const bus  = require('../services/eventBus');
 
 const logDir = cfg.log.dir;
 if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
@@ -14,6 +15,24 @@ const fmt = printf(({ level, message, timestamp, stack, ...meta }) => {
   const extra = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
   return `[${timestamp}] ${level}: ${stack || message}${extra}`;
 });
+
+// ── Custom EventBus Transport ──────────────────────────────────────────────
+class EventBusTransport extends winston.Transport {
+  constructor(opts) {
+    super(opts);
+  }
+  log(info, callback) {
+    setImmediate(() => {
+      bus.publish('system:log', {
+        level: info.level,
+        message: info.message,
+        timestamp: info.timestamp,
+        stack: info.stack
+      });
+    });
+    callback();
+  }
+}
 
 const logger = winston.createLogger({
   level: cfg.log.level,
@@ -34,6 +53,7 @@ const logger = winston.createLogger({
       maxFiles:    '30d',
       level:       'error',
     }),
+    new EventBusTransport({ level: 'info' })
   ],
 });
 

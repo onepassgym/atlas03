@@ -17,6 +17,9 @@ module.exports = {
     port: parseInt(process.env.PORT || '8747', 10),
     env:  env,
   },
+  auth: {
+    apiKeys: (process.env.API_KEYS || 'atlas_dev_secret').split(',').map(k => k.trim()).filter(Boolean),
+  },
   mongo: {
     uri:    getEnv('MONGODB_URI', isProd ? 'mongodb://mongo:27017/atlas05' : 'mongodb://127.0.0.1:27328/atlas05'),
     dbName: process.env.MONGODB_DB_NAME || 'atlas05',

@@ -17,6 +17,10 @@ const {
   scheduleNCRCrawl,
   queueCity,
 } = require('../services/schedulerService');
+const Gym = require('../db/gymModel');
+const { calculateQualityScore } = require('../services/intelligence/scoring');
+const { analyzeGymSentiment } = require('../services/intelligence/sentiment');
+const { Review } = require('../db/reviewModel');
 
 const LOG_DIR = cfg.log.dir;
 
@@ -338,6 +342,62 @@ router.post('/schedule/trigger/enrichment', async (req, res) => {
       jobs: results,
     }, 202);
   } catch (e) { err(res, e.message); }
+});
+
+// POST /api/system/vacuum-logs — clear all log files
+router.post('/vacuum-logs', async (req, res) => {
+  try {
+    const files = await fsp.readdir(LOG_DIR);
+    let count = 0;
+    for (const f of files) {
+      if (f.endsWith('.log')) {
+        await fsp.unlink(path.join(LOG_DIR, f));
+        count++;
+      }
+    }
+    logger.info(`Logs vacuumed: ${count} files removed`);
+    ok(res, { message: `Logs vacuumed. Removed ${count} log files.` });
+  } catch (e) { err(res, e.message); }
+});
+
+// POST /api/system/recalculate-scores — Bulk recalculate all gym scores/sentiment
+router.post('/recalculate-scores', async (req, res) => {
+  res.status(202).json({ success: true, message: 'Recalculation started in background' });
+  
+  // Run in background
+  (async () => {
+    try {
+      const gyms = await Gym.find({}).limit(5000); // Sanity limit
+      logger.info(`Starting bulk recalculation for ${gyms.length} gyms...`);
+      
+      let processed = 0;
+      for (const gym of gyms) {
+        // Recalculate Quality Score
+        const qScore = calculateQualityScore(gym);
+        gym.qualityScore = qScore.score;
+        gym.scoreBreakdown = qScore.breakdown;
+
+        // Recalculate Sentiment
+        const reviews = await Review.find({ gymId: gym._id }).lean();
+        if (reviews.length > 0) {
+          const sentiment = analyzeGymSentiment(reviews);
+          gym.sentimentScore = sentiment.score;
+          gym.sentimentTags = sentiment.tags;
+        }
+
+        await gym.save();
+        processed++;
+        if (processed % 100 === 0) {
+           bus.publish('system:diag', { message: `Recalculated ${processed}/${gyms.length} gyms` });
+           logger.info(`Recalculated ${processed}/${gyms.length} gyms`);
+        }
+      }
+      logger.info(`Bulk recalculation completed for ${processed} gyms`);
+      bus.publish('test:ping', { message: `✅ Recalculated ${processed} gym scores/sentiment` });
+    } catch (e) {
+      logger.error('Recalculation failed:', e);
+    }
+  })();
 });
 
 module.exports = router;

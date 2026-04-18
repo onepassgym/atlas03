@@ -48,7 +48,7 @@ const { ok, err, validate } = require('../utils/apiUtils');
  *         name: sortBy
  *         schema:
  *           type: string
- *           enum: [rating, totalReviews, name, createdAt]
+ *           enum: [rating, totalReviews, name, createdAt, qualityScore, sentimentScore]
  *       - in: query
  *         name: search
  *         schema:
@@ -65,10 +65,10 @@ router.get('/',
   query('minRating').optional().isFloat({ min: 0, max: 5 }),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('page').optional().isInt({ min: 1 }),
-  query('sortBy').optional().isIn(['rating','totalReviews','name','createdAt']),
+  query('sortBy').optional().isIn(['rating','totalReviews','name','createdAt','qualityScore','sentimentScore']),
   async (req, res) => {
     if (validate(req, res)) return;
-    const { city, category, minRating, limit = 20, page = 1, sortBy = 'rating', order = 'desc', search } = req.query;
+    const { city, category, minRating, limit = 20, page = 1, sortBy = 'qualityScore', order = 'desc', search } = req.query;
     const filter = {};
     if (city)      filter.areaName = { $regex: new RegExp(city, 'i') };
     if (category)  filter.category = category;
@@ -162,7 +162,7 @@ router.get('/nearby',
 // GET /api/gyms/stats
 router.get('/stats', async (_, res) => {
   try {
-    const [total, byCategory, topCities, avgRating] = await Promise.all([
+    const [total, byCategory, topCities, globalStats] = await Promise.all([
       Gym.countDocuments(),
       Gym.aggregate([
         { $group: { _id: '$categoryId', count: { $sum: 1 } } },
@@ -171,10 +171,37 @@ router.get('/stats', async (_, res) => {
         { $project: { _id: { $ifNull: ['$cat.label', 'Unknown'] }, count: 1 } },
         { $sort: { count: -1 } }
       ]),
-      Gym.aggregate([{ $group: { _id: '$areaName', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }]),
-      Gym.aggregate([{ $match: { rating: { $gt: 0 } } }, { $group: { _id: null, avg: { $avg: '$rating' } } }]),
+      Gym.aggregate([
+        { $match: { areaName: { $ne: null } } },
+        { $group: { _id: '$areaName', count: { $sum: 1 } } }, 
+        { $sort: { count: -1 } }, 
+        { $limit: 10 }
+      ]),
+      Gym.aggregate([
+        { 
+          $group: { 
+            _id: null, 
+            avgRating: { $avg: '$rating' },
+            avgQuality: { $avg: '$qualityScore' },
+            avgSentiment: { $avg: '$sentimentScore' },
+            totalReviews: { $sum: '$totalReviews' },
+            totalPhotos: { $sum: '$totalPhotos' }
+          } 
+        }
+      ]),
     ]);
-    ok(res, { stats: { total, byCategory, topCities, averageRating: avgRating[0]?.avg?.toFixed(2) } });
+
+    ok(res, { stats: { 
+      total, 
+      byCategory, 
+      topCities, 
+      averageRating: globalStats[0]?.avgRating?.toFixed(2) || '0.00',
+      averageQuality: globalStats[0]?.avgQuality?.toFixed(1) || '0.0',
+      averageSentiment: globalStats[0]?.avgSentiment?.toFixed(2) || '0.00',
+      totalReviews: globalStats[0]?.totalReviews || 0,
+      totalPhotos: globalStats[0]?.totalPhotos || 0,
+      cityCount: topCities.length
+    } });
   } catch (e) { err(res, e.message); }
 });
 

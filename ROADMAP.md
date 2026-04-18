@@ -34,7 +34,7 @@ These are foundational improvements that de-risk the existing system before addi
 
 ---
 
-### ⬜ 1.2 Webhook Notifications
+### ✅ 1.2 Webhook Notifications (Completed: 2026-04-18)
 
 **Problem:** Multi-hour city crawls run silently. No way to know when a crawl finishes or fails unless you poll the API.
 
@@ -51,7 +51,7 @@ These are foundational improvements that de-risk the existing system before addi
 
 ---
 
-### ⬜ 1.3 Real-Time SSE Events + Live Dashboard
+### ✅ 1.3 Real-Time SSE Events + Live Dashboard (Completed: 2026-04-18)
 
 **Problem:** No visual monitoring of crawl progress. Terminal logs are the only feedback.
 
@@ -69,7 +69,7 @@ These are foundational improvements that de-risk the existing system before addi
 
 ---
 
-### ⬜ 1.4 Fix Known Technical Debt
+### ✅ 1.4 Fix Known Technical Debt (Completed: 2026-04-18)
 
 **Problem:** Multiple small issues accumulating (see `ARCHITECTURE.md` TD-01 through TD-08).
 
@@ -304,6 +304,9 @@ Build on top of the data platform for end-user products.
 | Change log tracking | 2026-04-14 | Data |
 | Staleness-aware re-crawling | 2026-04-14 | Intelligence |
 | Enrichment (completeness-based re-crawl) | 2026-04-14 | Intelligence |
+| Webhook Event Bus (job/gym events) | 2026-04-18 | Hardening |
+| Real-time Dashboard (SSE Mission Control) | 2026-04-18 | Hardening |
+| Tech Debt Cleanup (stray files, DB naming) | 2026-04-18 | Hardening |
 
 ---
 
