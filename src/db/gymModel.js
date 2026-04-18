@@ -82,6 +82,7 @@ const GymSchema = new mongoose.Schema({
 
   // Stats
   reviewsScraped: { type: Number, default: 0 },
+  reviewSummary:  String,
 
   // Hours
   openingHours: [HoursSchema],
