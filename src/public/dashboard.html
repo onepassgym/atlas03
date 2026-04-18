@@ -674,6 +674,51 @@
     .log-lvl.error { color: var(--danger); }
     .log-msg { color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; }
 
+    /* ── Environment Toggle ────────────────────────────────────── */
+    .env-toggle {
+      display: flex;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 3px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      gap: 2px;
+    }
+
+    .env-btn {
+      padding: 4px 12px;
+      border-radius: 17px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .env-btn.active {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+    }
+
+    .env-btn:not(.active):hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary);
+    }
+
+    .env-status {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-right: 12px;
+      font-family: var(--mono);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
     /* ── Globe Background ─────────────────────────────────────── */
     .globe-canvas-container {
       position: fixed;
@@ -706,12 +751,25 @@
   <!-- ── Header ─────────────────────────────────────────────── -->
   <header class="header">
     <div class="header-left">
-      <span class="logo">🏋️ Atlas05</span>
-      <span class="logo-sub">Mission Control</span>
+      <div style="display:flex; flex-direction:column">
+        <span class="logo">🏋️ Atlas05</span>
+        <span class="logo-sub">Mission Control</span>
+      </div>
+      
+      <div class="env-toggle" id="envToggleWrapper" style="margin-left: 24px;">
+        <button class="env-btn active" id="envLocal" onclick="switchEnv('local')">Local</button>
+        <button class="env-btn" id="envProd" onclick="switchEnv('prod')">Production</button>
+      </div>
     </div>
-    <div class="connection-badge">
-      <span class="connection-dot" id="connDot"></span>
-      <span id="connText">Connecting…</span>
+
+    <div style="display:flex; align-items:center;">
+      <div id="envEndpoint" class="env-status">
+        <span style="opacity:0.5">API:</span> <span id="currentEndpointURL">-</span>
+      </div>
+      <div class="connection-badge">
+        <span class="connection-dot" id="connDot"></span>
+        <span id="connText">Connecting…</span>
+      </div>
     </div>
   </header>
 
@@ -889,23 +947,54 @@
     </div>
   </div>
   <script>
+    // ── Configuration ────────────────────────────────────────────
+    const SERVER_ENV = '__SERVER_ENV__';
+    const isProdEnv = SERVER_ENV === 'production' || SERVER_ENV === 'prod';
+    
+    // Hide the toggle if we are deployed in production
+    document.addEventListener('DOMContentLoaded', () => {
+      if (isProdEnv) {
+        const toggleWrapper = document.getElementById('envToggleWrapper');
+        if (toggleWrapper) toggleWrapper.style.display = 'none';
+      }
+    });
+
+    const ENV_CONFIG = {
+      local: window.location.origin,
+      prod: isProdEnv ? window.location.origin : 'https://atlas.onepassgym.com'
+    };
+
     // ── State ────────────────────────────────────────────────────
-    const BASE = window.location.origin;
+    const BASE = ''; // Relative path, intercepted by window.fetch
+    let CURRENT_ENV = isProdEnv ? 'prod' : (localStorage.getItem('atlas_env') || 'local');
+    if (isProdEnv) localStorage.setItem('atlas_env', 'prod');
+    let API_KEY = '';
     let eventSource = null;
     let events = [];
     let isConnected = false;
 
+    // Computed Base URL
+    const getBase = () => ENV_CONFIG[CURRENT_ENV];
+
     // ── Authentication ──────────────────────────────────────────
-    let API_KEY = sessionStorage.getItem('atlas_api_key');
-    if (!API_KEY) {
-      API_KEY = prompt('Enter Atlas05 API Key:');
-      if (API_KEY) sessionStorage.setItem('atlas_api_key', API_KEY);
+    function loadApiKey() {
+      const keyName = `atlas_api_key_${CURRENT_ENV}`;
+      API_KEY = sessionStorage.getItem(keyName);
+      if (!API_KEY) {
+        API_KEY = prompt(`Enter Atlas05 API Key for [${CURRENT_ENV.toUpperCase()}]:`);
+        if (API_KEY) sessionStorage.setItem(keyName, API_KEY);
+      }
     }
 
     // Intercept all fetches to add the API key header
     const originalFetch = window.fetch;
     window.fetch = async function () {
       let [resource, config] = arguments;
+      // Resolve relative URLs to the current environment base
+      if (typeof resource === 'string' && resource.startsWith('/api/')) {
+        resource = getBase() + resource;
+      }
+      
       if (typeof resource === 'string' && resource.includes('/api/')) {
         config = config || {};
         config.headers = config.headers || {};
@@ -914,11 +1003,49 @@
       return originalFetch(resource, config);
     };
 
+    // ── Environment Switching ────────────────────────────────────
+    window.switchEnv = function(env) {
+      if (env === CURRENT_ENV && eventSource) return;
+      
+      console.log(`🚀 Switching to ${env} environment...`);
+      CURRENT_ENV = env;
+      localStorage.setItem('atlas_env', env);
+
+      // UI Updates
+      document.querySelectorAll('.env-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(env === 'local' ? 'envLocal' : 'envProd').classList.add('active');
+      document.getElementById('currentEndpointURL').textContent = getBase().replace('https://', '').replace('http://', '');
+
+      // Reset UI Data
+      document.getElementById('logFeed').innerHTML = '<div class="empty-state">🔌 Switching environment...</div>';
+      events = [];
+      
+      // Re-init
+      loadApiKey();
+      connectSSE();
+      fetchStats();
+      fetchJobs();
+      fetchSchedule();
+      fetchEventHistory();
+      fetchLatestGyms();
+      
+      toast(`Switched to ${env.toUpperCase()}`, 'info');
+    }
+
     // ── SSE Connection ──────────────────────────────────────────
     function connectSSE() {
-      if (eventSource) eventSource.close();
-      const url = new URL(`${BASE}/api/events`);
+      if (eventSource) {
+        console.log('Closing existing SSE connection...');
+        eventSource.close();
+      }
+      
+      isConnected = false;
+      updateConnectionUI(false);
+
+      const url = new URL(`${getBase()}/api/events`);
       if (API_KEY) url.searchParams.append('api_key', API_KEY);
+      
+      console.log(`Connecting to SSE: ${url.origin}`);
       eventSource = new EventSource(url.toString());
 
       eventSource.addEventListener('connected', (e) => {
@@ -1140,11 +1267,16 @@
                 <span>Updated: <span class="job-stat-val" style="color:var(--accent)">${p.updatedGyms || 0}</span></span>
                 <span>Failed: <span class="job-stat-val" style="color:var(--danger)">${p.failed || 0}</span></span>
               </div>
-              ${j.status === 'running' || j.status === 'queued' ? `
-                <div class="progress-bar">
-                  <div class="progress-fill" style="width:${pct}%"></div>
-                </div>
-              ` : ''}
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+                ${j.status === 'running' || j.status === 'queued' ? `
+                  <div class="progress-bar" style="flex:1; margin-right:10px;">
+                    <div class="progress-fill" style="width:${pct}%"></div>
+                  </div>
+                ` : ''}
+                ${j.status === 'queued' ? `
+                  <button class="action-btn" data-action="promote-job" data-id="${j.jobId}" style="padding:4px 8px; font-size:10px; flex-shrink:0;">⚡ Start Now</button>
+                ` : ''}
+              </div>
             </div>
           `;
         }).join('');
@@ -1275,9 +1407,21 @@
     async function recalculateScores() {
       if (!confirm('Recalculate quality scores for all gyms? (Intensive background operation)')) return;
       try {
-        const res = await fetch(`${BASE}/api/system/recalculate-scores`, { method: 'POST' }).then(r => r.json());
+        const res = await window.fetch(`/api/system/recalculate-scores`, { method: 'POST' }).then(r => r.json());
         toast(res.message || 'Recalculation started', 'info');
       } catch { toast('Failed', 'error'); }
+    }
+
+    async function promoteJob(jobId) {
+      try {
+        const res = await window.fetch(`/api/crawl/promote/${jobId}`, { method: 'POST' }).then(r => r.json());
+        if (res.success) {
+          toast('Job promoted to front!', 'success');
+          fetchJobs();
+        } else {
+          toast(res.error || 'Failed to promote job', 'error');
+        }
+      } catch { toast('Network error', 'error'); }
     }
 
     async function vacuumLogs() {
@@ -1321,6 +1465,7 @@
         case 'trigger-stale':      triggerStale(); break;
         case 'trigger-enrichment': triggerEnrichment(); break;
         case 'recalculate-scores': recalculateScores(); break;
+        case 'promote-job':        promoteJob(btn.dataset.id); break;
         case 'retry-failed':       retryFailed(); break;
         case 'vacuum-logs':        vacuumLogs(); break;
         case 'test-event':         testEvent(); break;
@@ -1334,17 +1479,13 @@
     });
 
     // ── Init ────────────────────────────────────────────────────
-    connectSSE();
-    fetchStats();
-    fetchJobs();
-    fetchSchedule();
-    fetchEventHistory();
-    fetchLatestGyms();
-
     // Auto-refresh stats every 30s, jobs every 15s
     setInterval(fetchStats, 30000);
     setInterval(fetchJobs, 15000);
     setInterval(fetchLatestGyms, 20000);
+
+    // Initial load
+    switchEnv(CURRENT_ENV);
   </script>
 
   <!-- ── Globe Animation Script ──────────────────────────────── -->

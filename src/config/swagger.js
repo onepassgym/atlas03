@@ -14,7 +14,12 @@ const options = {
         url: 'https://atlas.onepassgym.com'
       }
     },
-    servers: [
+    servers: (cfg.server.env === 'production' || cfg.server.env === 'prod') ? [
+      {
+        url: 'https://atlas.onepassgym.com',
+        description: 'Production server'
+      }
+    ] : [
       {
         url: `http://localhost:${cfg.server.port}`,
         description: 'Local development server'

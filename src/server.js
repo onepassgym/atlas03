@@ -70,7 +70,16 @@ app.use('/api/events', require('./api/eventRoutes'));
 
 // ── Static files + Dashboard ──────────────────────────────────────────────────
 app.use('/public', express.static(path.join(__dirname, 'public'), { maxAge: '1d' }));
-app.get('/dashboard', (_, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
+app.get('/dashboard', async (_, res) => {
+  try {
+    const htmlPath = path.join(__dirname, 'public', 'dashboard.html');
+    let html = await fs.promises.readFile(htmlPath, 'utf8');
+    html = html.replace('__SERVER_ENV__', cfg.server.env);
+    res.send(html);
+  } catch (err) {
+    res.status(500).send('Error loading dashboard');
+  }
+});
 
 // ── Error handlers ────────────────────────────────────────────────────────────
 app.use((req, res) =>
