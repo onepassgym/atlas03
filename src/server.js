@@ -13,26 +13,35 @@ const fs          = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
 const { connectDB }   = require('./db/connection');
+const indexRoutes     = require('./api/indexRoutes');
 const crawlRoutes     = require('./api/crawlRoutes');
 const gymRoutes       = require('./api/gymRoutes');
 const systemRoutes    = require('./api/systemRoutes');
-const { addCityJob }  = require('./queue/queues');
-const CrawlJob        = require('./db/crawlJobModel');
+const { startScheduler } = require('./services/schedulerService');
+const bus             = require('./services/eventBus');
+const { startWebhookService } = require('./services/webhookService');
 const cfg             = require('../config');
 const logger          = require('./utils/logger');
-const { FITNESS_CATEGORIES } = require('./scraper/googleMapsScraper');
+const authMiddleware  = require('./middleware/auth');
+const swaggerUi       = require('swagger-ui-express');
+const swaggerSpec     = require('./config/swagger');
 
 const app = express();
 app.set('trust proxy', 1); // Enable trusting proxy headers for rate limiting
 
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,  // Disabled: dashboard is a single-file internal tool
+}));
 app.use(cors());
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(morgan('combined', { stream: { write: m => logger.info(m.trim()) } }));
+app.use(morgan('combined', { 
+  stream: { write: m => logger.info(m.trim()) },
+  skip: (req) => req.path === '/api/events'
+}));
 
 // ── Rate limit ────────────────────────────────────────────────────────────────
 app.use('/api', rateLimit({
@@ -48,50 +57,29 @@ fs.mkdirSync(mediaPath, { recursive: true });
 app.use('/media', express.static(mediaPath, { maxAge: '7d' }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
+app.use('/',           indexRoutes);
+app.use('/api-docs',   swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// Base API authentication
+app.use('/api',        authMiddleware);
+
 app.use('/api/crawl',  crawlRoutes);
 app.use('/api/gyms',   gymRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/events', require('./api/eventRoutes'));
 
-// ── Health ────────────────────────────────────────────────────────────────────
-app.get('/health', (_, res) => res.json({
-  status:  'ok',
-  service: 'Atlas05 Scraper',
-  version: '1.0.0',
-  uptime:  process.uptime(),
-  ts:      new Date(),
-  port:    cfg.server.port,
-}));
-
-// ── Root docs ─────────────────────────────────────────────────────────────────
-app.get('/', (_, res) => {
-  const lastUpdate = fs.statSync(__filename).mtime;
-  const formattedUpdate = lastUpdate.toISOString().replace('T', ' ').split('.')[0];
-
-  return res.json({
-    service: '🏋️ Atlas05 Scraper API',
-    version: '1.0.0',
-    port:    cfg.server.port,
-    lastCodeUpdate: formattedUpdate,
-  endpoints: {
-    'POST /api/crawl/city':          'Start a city crawl',
-    'POST /api/crawl/gym':           'Crawl by gym name',
-    'POST /api/crawl/batch':         'Queue multiple cities',
-    'GET  /api/crawl/status/:jobId': 'Job status',
-    'GET  /api/crawl/jobs':          'All jobs',
-    'GET  /api/crawl/queue/stats':   'Bull queue stats',
-    'GET  /api/crawl/categories':    'Fitness categories',
-    'GET  /api/gyms':                'List/filter gyms',
-    'GET  /api/gyms/nearby':         'Gyms near lat/lng',
-    'GET  /api/gyms/stats':          'DB statistics',
-    'GET  /api/gyms/:id':            'Full gym detail',
-    'PATCH /api/gyms/:id':           'Update platform fields',
-    'GET  /api/system/logs':         'List/view all log files',
-    'GET  /api/system/logs/latest':  'Tail latest app log',
-  },
+// ── Static files + Dashboard ──────────────────────────────────────────────────
+app.use('/public', express.static(path.join(__dirname, 'public'), { maxAge: '1d' }));
+app.get('/dashboard', async (_, res) => {
+  try {
+    const htmlPath = path.join(__dirname, 'public', 'dashboard.html');
+    let html = await fs.promises.readFile(htmlPath, 'utf8');
+    html = html.replace('__SERVER_ENV__', cfg.server.env);
+    res.send(html);
+  } catch (err) {
+    res.status(500).send('Error loading dashboard');
+  }
 });
-});
-
-
 
 // ── Error handlers ────────────────────────────────────────────────────────────
 app.use((req, res) =>
@@ -102,52 +90,6 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
-// ── Scheduled Crawl ──────────────────────────────────────────────────────────
-// Cities: Delhi, Ghaziabad, Gurugram, Noida, Bangalore
-// Schedule: every Sunday at 02:00 AM IST (20:30 UTC Saturday)
-// Re-crawls all cities weekly to catch new gyms + update existing data
-
-const NCR_CITIES = [
-  // 'Delhi, India',
-  'Ghaziabad, Uttar Pradesh, India',
-  // 'Gurugram, Haryana, India',
-  // 'Noida, Uttar Pradesh, India',
-  'Bangalore, Karnataka, India',
-  'Bengaluru, Karnataka, India',
-];
-
-async function scheduleNCRCrawl(reason = 'scheduled') {
-  logger.info(`\n📅 Scheduled crawl triggered [${reason}] — queuing ${NCR_CITIES.length} cities`);
-  for (const cityName of NCR_CITIES) {
-    const jobId = uuidv4();
-    try {
-      await CrawlJob.create({
-        jobId,
-        type:   'city',
-        input:  { cityName, categories: FITNESS_CATEGORIES },
-        status: 'queued',
-      });
-      await addCityJob(jobId, cityName, FITNESS_CATEGORIES);
-      logger.info(`  ✅ Queued: ${cityName} → jobId: ${jobId}`);
-    } catch (err) {
-      logger.error(`  ❌ Failed to queue ${cityName}: ${err.message}`);
-    }
-  }
-  logger.info(`📅 Scheduled crawl batch queued.\n`);
-}
-
-function startScheduler() {
-  // Every Sunday at 02:00 AM IST = 20:30 UTC on Saturday
-  // Cron: 30 20 * * 6  (min hour day month weekday)
-  cron.schedule('30 20 * * 6', async () => {
-    await scheduleNCRCrawl('weekly-cron');
-  }, {
-    timezone: 'UTC',
-  });
-
-  logger.info('⏰ Scheduler started — Scheduled cities crawl: every Sunday 02:00 AM IST');
-}
-
 // ── Startup ───────────────────────────────────────────────────────────────────
 (async () => {
   await connectDB();
@@ -156,11 +98,15 @@ function startScheduler() {
     logger.info(`\n${'─'.repeat(50)}`);
     logger.info(`🚀 Atlas05 API    →  http://localhost:${cfg.server.port}`);
     logger.info(`📦 Media files       →  http://localhost:${cfg.server.port}/media`);
-    logger.info(`📋 API docs          →  http://localhost:${cfg.server.port}/`);
+    logger.info(`📋 API docs          →  http://localhost:${cfg.server.port}/api-docs`);
+    logger.info(`📊 Dashboard         →  http://localhost:${cfg.server.port}/dashboard`);
+    logger.info(`📡 SSE events        →  http://localhost:${cfg.server.port}/api/events`);
     logger.info(`${'─'.repeat(50)}\n`);
 
-    // Start the weekly scheduler
+    // Start services
     startScheduler();
+    startWebhookService();
+    bus.publish('system:startup', { port: cfg.server.port, env: cfg.server.env });
   });
 })();
 

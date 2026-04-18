@@ -9,13 +9,16 @@ const isProd = env === 'production' || env === 'prod';
  */
 function getEnv(key, defaultValue) {
   const specificKey = isProd ? `PROD_${key}` : `DEV_${key}`;
-  return process.env[specificKey] || process.env[key] || defaultValue;
+  return process.env[key] || process.env[specificKey] || defaultValue;
 }
 
 module.exports = {
   server: {
     port: parseInt(process.env.PORT || '8747', 10),
     env:  env,
+  },
+  auth: {
+    apiKeys: (process.env.API_KEYS || 'atlas_dev_secret').split(',').map(k => k.trim()).filter(Boolean),
   },
   mongo: {
     uri:    getEnv('MONGODB_URI', isProd ? 'mongodb://mongo:27017/atlas05' : 'mongodb://127.0.0.1:27328/atlas05'),

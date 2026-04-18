@@ -13,7 +13,8 @@
     "retry:incomplete": "node scripts/retryFailed.js --incomplete",
     "db:stats": "node scripts/dbStats.js",
     "db:export": "node scripts/dbStats.js --export",
-    "setup": "npx playwright install chromium --with-deps"
+    "setup": "npx playwright install chromium --with-deps",
+    "docs:snapshot": "node scripts/genArchSnapshot.js"
   },
   "dependencies": {
     "axios": "1.7.2",
@@ -38,6 +39,8 @@
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "sharp": "0.33.4",
     "slugify": "1.6.6",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "10.0.0",
     "winston": "3.13.0",
     "winston-daily-rotate-file": "5.0.0"

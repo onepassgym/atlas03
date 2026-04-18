@@ -21,7 +21,7 @@ async function ensureIndexes() {
   await gyms.createIndex({ location: '2dsphere' }, { sparse: true, name: 'location_2dsphere' });
 
   // ── reviews ───────────────────────────────────────────────────────────────
-  const reviews = db.collection('reviews');
+  const reviews = db.collection('gym_reviews');
   await reviews.createIndex({ gymId: 1 },    { name: 'reviews_gymId' });
   await reviews.createIndex({ reviewId: 1 }, { unique: true, name: 'reviewId_unique' });
 

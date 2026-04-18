@@ -25,6 +25,8 @@ const Category       = require('./categoryModel');
 const Amenity        = require('./amenityModel');
 const PlaceType      = require('./placeTypeModel');
 const GymChangeLog = require('./gymChangeLogModel');
+const { calculateQualityScore } = require('../services/intelligence/scoring');
+const { analyzeGymSentiment } = require('../services/intelligence/sentiment');
 const logger       = require('../utils/logger');
 const slugify      = require('slugify');
 
@@ -44,6 +46,24 @@ const TRACKED_FIELDS = ['name', 'address'];
 // ── Deep equality check (good enough for our field types) ─────────────────────
 function equal(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// ── Name normalization and similarity for fuzzy dedup ─────────────────────────
+function normalizeName(name = '') {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\b(gym|fitness|studio|centre|center|club|the|and|&|pvt|ltd|inc)\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function jaccardSim(a, b) {
+  const sa = new Set(normalizeName(a).split(' ').filter(Boolean));
+  const sb = new Set(normalizeName(b).split(' ').filter(Boolean));
+  const inter = new Set([...sa].filter(x => sb.has(x)));
+  const union = new Set([...sa, ...sb]);
+  return union.size === 0 ? 0 : inter.size / union.size;
 }
 
 function slugifyValue(str) {
@@ -153,22 +173,76 @@ function buildLocation(lat, lng) {
   return undefined;
 }
 
-// ── Find existing gym by slug → googleMapsUrl → placeId ──────────────────────
+// ── Find existing gym by slug → googleMapsUrl → placeId → geo+name → phone ──
 async function findExistingGym(crawledData) {
-  const { slug, googleMapsUrl, placeId } = crawledData;
+  const { slug, googleMapsUrl, placeId, lat, lng, name, address } = crawledData;
+  const phone = crawledData.contact?.phone;
 
+  // Tier 1: Exact slug match
   if (slug) {
     const found = await Gym.findOne({ slug }).lean();
     if (found) return found;
   }
 
+  // Tier 2: Exact Google Maps URL match
   if (googleMapsUrl) {
     const found = await Gym.findOne({ googleMapsUrl }).lean();
     if (found) return found;
   }
 
+  // Tier 3: Exact Place ID match
   if (placeId) {
     const found = await Gym.findOne({ placeId }).lean();
+    if (found) return found;
+  }
+
+  // Tier 4: Spatial proximity + fuzzy name match (50m radius, Jaccard ≥ 0.50)
+  if (lat && lng && name) {
+    try {
+      const nearby = await Gym.find({
+        geoLocation: {
+          $nearSphere: {
+            $geometry: { type: 'Point', coordinates: [lng, lat] },
+            $maxDistance: 50, // meters
+          }
+        }
+      }).limit(10).lean();
+
+      for (const candidate of nearby) {
+        if (!candidate.name) continue;
+        const sim = jaccardSim(name, candidate.name);
+        if (sim >= 0.50) {
+          logger.info(`[DEDUP] Geo+name match: "${name}" ≈ "${candidate.name}" (sim=${sim.toFixed(2)})`);
+          return candidate;
+        }
+      }
+    } catch (err) {
+      // geoLocation index may not exist yet on some records — non-fatal
+      logger.warn(`Geo dedup query failed (non-fatal): ${err.message}`);
+    }
+  }
+
+  // Tier 5: Phone number match (for rebranded gyms at different addresses)
+  if (phone) {
+    const normalizedPhone = phone.replace(/[\s\-\(\)]/g, '');
+    if (normalizedPhone.length >= 10) {
+      const found = await Gym.findOne({
+        'contact.phone': { $regex: normalizedPhone.slice(-10) }
+      }).lean();
+      if (found) {
+        logger.info(`[DEDUP] Phone match: "${name}" ↔ "${found.name}" via ${normalizedPhone}`);
+        return found;
+      }
+    }
+  }
+
+  // Tier 6: Exact name + partial address match
+  if (name && address) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const found = await Gym.findOne({
+      name:    { $regex: new RegExp(`^${escaped}$`, 'i') },
+      address: { $regex: new RegExp(address.slice(0, 25), 'i') },
+    }).lean();
     if (found) return found;
   }
 
@@ -302,6 +376,15 @@ async function upsertGym(crawledData) {
     delete normalizedData.amenities;
     delete normalizedData.crawlMeta;
 
+    // ── Apply Data Intelligence (Phase 2) ────────────────────────────────────
+    const qScore = calculateQualityScore(normalizedData);
+    normalizedData.qualityScore = qScore.score;
+    normalizedData.scoreBreakdown = qScore.breakdown;
+
+    const sentiment = analyzeGymSentiment(crawledData.reviews);
+    normalizedData.sentimentScore = sentiment.score;
+    normalizedData.sentimentTags = sentiment.tags;
+
     // ── INSERT path ──────────────────────────────────────────────────────────
     if (!existing) {
       if (normalizedData.lat != null && normalizedData.lng != null) {
@@ -369,6 +452,16 @@ async function upsertGym(crawledData) {
     $set.categoryId = categoryId;
     $set.amenityIds = amenityIds;
     $set.parsed = true;
+
+    // Intelligence Data
+    $set.qualityScore = normalizedData.qualityScore;
+    $set.scoreBreakdown = normalizedData.scoreBreakdown;
+    // We only update sentiment if we have reviews crawled this cycle,
+    // though realistically we should append and re-analyze. Since we merge
+    // reviews, let's update sentiment using only the new fetched batch as a proxy, 
+    // or just overwrite if it's there. 
+    $set.sentimentScore = normalizedData.sentimentScore;
+    $set.sentimentTags = normalizedData.sentimentTags;
 
     // 4. Also rebuild GeoJSON location
     const location = buildLocation(crawledData.lat, crawledData.lng);
