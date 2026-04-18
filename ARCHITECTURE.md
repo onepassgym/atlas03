@@ -37,7 +37,8 @@ Atlas05 is an **API-first Google Maps fitness venue scraper** that operates as t
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| API Server | Express 4 + Swagger | REST API for crawl management, gym data, scheduling |
+| API Server | Express 4 | REST API for crawl management, gym data, scheduling |
+| Dashboard | React 19 + Vite 6 | Mission Control SPA for real-time monitoring |
 | Worker | BullMQ Worker | Processes crawl jobs using Playwright |
 | Database | MongoDB 7 (Mongoose 8) | Gym data, reviews, photos, crawl jobs, change logs |
 | Queue | Redis 7 + BullMQ 5 | Job queue with priority, retry, cancellation |
@@ -60,11 +61,12 @@ Atlas05 is an **API-first Google Maps fitness venue scraper** that operates as t
 │                         API SERVER (server.js)                      │
 │                                                                     │
 │  Express App                                                        │
-│  ├── indexRoutes     GET /           GET /health                    │
+│  ├── indexRoutes     GET / (redirects to /dashboard)               │
 │  ├── crawlRoutes     POST|GET /api/crawl/*                         │
 │  ├── gymRoutes       GET|PATCH /api/gyms/*                         │
 │  ├── systemRoutes    GET|POST|DELETE /api/system/*                  │
-│  ├── swagger-ui      GET /api-docs                                 │
+│  ├── eventRoutes     GET /api/events                               │
+│  ├── dashboard SPA   GET /dashboard/*                              │
 │  └── static media    GET /media/*                                  │
 │                                                                     │
 │  node-cron scheduler (5 cron jobs)                                 │
@@ -131,12 +133,10 @@ atlas05/
 ├── src/
 │   ├── server.js                # Express app entry point
 │   ├── api/
-│   │   ├── indexRoutes.js       # GET / (docs), GET /health
+│   │   ├── indexRoutes.js       # GET / (redirect), GET /health
 │   │   ├── crawlRoutes.js       # Crawl CRUD + cancel + retry
 │   │   ├── gymRoutes.js         # Gym listing, search, geo, export
 │   │   └── systemRoutes.js      # Logs, schedule, triggers
-│   ├── config/
-│   │   └── swagger.js           # OpenAPI 3.0 spec config
 │   ├── db/
 │   │   ├── connection.js        # Mongoose connect + auto-reconnect
 │   │   ├── ensureIndexes.js     # Imperative index creation on startup
@@ -288,7 +288,6 @@ name, address, contact.phone, contact.email, contact.website
 | `config/index.js` | Environment-aware config builder (dev/prod auto-selection) |
 | `config/schedule.json` | 21 cities with frequency/priority + staleness/enrichment thresholds |
 | `.env` | Port, DB URIs, Redis, scraper behavior, rate limits |
-| `src/config/swagger.js` | OpenAPI 3.0 spec generation from JSDoc annotations |
 
 ---
 

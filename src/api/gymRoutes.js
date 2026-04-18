@@ -74,6 +74,9 @@ router.get('/',
     if (category)  filter.category = category;
     if (minRating) filter.rating   = { $gte: +minRating };
     if (search)    filter.$text    = { $search: search };
+    if (req.query.chainSlug)     filter.chainSlug     = req.query.chainSlug;
+    if (req.query.isChainMember) filter.isChainMember  = req.query.isChainMember === 'true';
+    if (req.query.minReviews)    filter.totalReviews   = { $gte: +req.query.minReviews };
     try {
       const [gyms, total] = await Promise.all([
         Gym.find(filter)

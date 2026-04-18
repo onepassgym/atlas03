@@ -24,8 +24,6 @@ const { startWebhookService } = require('./services/webhookService');
 const cfg             = require('../config');
 const logger          = require('./utils/logger');
 const authMiddleware  = require('./middleware/auth');
-const swaggerUi       = require('swagger-ui-express');
-const swaggerSpec     = require('./config/swagger');
 
 const app = express();
 app.set('trust proxy', 1); // Enable trusting proxy headers for rate limiting
@@ -59,7 +57,7 @@ app.use('/media', express.static(mediaPath, { maxAge: '7d' }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/',           indexRoutes);
-app.use('/api-docs',   swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/',           indexRoutes);
 
 // Base API authentication
 app.use('/api',        authMiddleware);
@@ -71,17 +69,11 @@ app.use('/api/system',  systemRoutes);
 app.use('/api/events',  require('./api/eventRoutes'));
 
 // ── Static files + Dashboard ──────────────────────────────────────────────────
-app.use('/public', express.static(path.join(__dirname, 'public'), { maxAge: '1d' }));
-app.get('/dashboard', async (_, res) => {
-  try {
-    const htmlPath = path.join(__dirname, 'public', 'dashboard.html');
-    let html = await fs.promises.readFile(htmlPath, 'utf8');
-    html = html.replace('__SERVER_ENV__', cfg.server.env);
-    res.send(html);
-  } catch (err) {
-    res.status(500).send('Error loading dashboard');
-  }
-});
+
+// Serve Vite-built dashboard SPA
+const dashboardPath = path.join(__dirname, '..', 'dashboard', 'dist');
+app.use('/dashboard', express.static(dashboardPath, { maxAge: '7d' }));
+app.get('/dashboard/*', (_, res) => res.sendFile(path.join(dashboardPath, 'index.html')));
 
 // ── Error handlers ────────────────────────────────────────────────────────────
 app.use((req, res) =>
@@ -100,7 +92,6 @@ app.use((err, req, res, _next) => {
     logger.info(`\n${'─'.repeat(50)}`);
     logger.info(`🚀 Atlas05 API    →  http://localhost:${cfg.server.port}`);
     logger.info(`📦 Media files       →  http://localhost:${cfg.server.port}/media`);
-    logger.info(`📋 API docs          →  http://localhost:${cfg.server.port}/api-docs`);
     logger.info(`📊 Dashboard         →  http://localhost:${cfg.server.port}/dashboard`);
     logger.info(`📡 SSE events        →  http://localhost:${cfg.server.port}/api/events`);
     logger.info(`${'─'.repeat(50)}\n`);

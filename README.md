@@ -1,14 +1,14 @@
 # 🏋️ Atlas05 Scraper
 
 Google Maps fitness venue scraper for the **Atlas05** platform.  
-No API key required · Node 20 · MongoDB 7 · Redis · Playwright · Swagger
+No API key required · Node 20 · MongoDB 7 · Redis · Playwright · React SPA Dashboard
 
 ---
 
 ## 🚀 Key Features
 
 - **Zero-Cost Enrichment**: High-fidelity gym data (prices, timings, photos, reviews) without Google API fees.
-- **Interactive API Guide**: Full Swagger documentation available at `/api-docs`.
+- **Mission Control Dashboard**: Modern Vite + React SPA for real-time monitoring and administrative tasks.
 - **Graceful Cancellation**: Stop city or gym crawls mid-process reliably via API or Redis signals.
 - **Smart Scheduling**: Multi-tier frequency (Weekly, Biweekly, Monthly) with staleness-aware re-crawling.
 - **6-Tier Deduplication**: Advanced spatial + textual matching to prevent duplicate gym records.
@@ -49,9 +49,9 @@ npm run setup        # Installs Chromium dependencies
 docker-compose up -d # Recommended: starts Mongo, Redis, API, and Worker
 ```
 
-### 3. Access Docs
-- **Interactive UI**: [http://localhost:8747/api-docs](http://localhost:8747/api-docs)
-- **JSON Spec**: `http://localhost:8747/swagger.json` (via Swagger UI)
+### 3. Access Dashboard
+- **Mission Control**: [http://localhost:8747/dashboard](http://localhost:8747/dashboard)
+- **Health Check**: `http://localhost:8747/health`
 
 ---
 
@@ -119,7 +119,7 @@ See **[DEPLOY.md](DEPLOY.md)** for full step-by-step guide.
 | **[ROADMAP.md](ROADMAP.md)** | Feature upgrade roadmap in 5 phases with status tracking | Manual |
 | **[docs/SNAPSHOT.md](docs/SNAPSHOT.md)** | Auto-generated: file tree, route inventory, model summary, dependency list | Auto (`npm run docs:snapshot`) |
 | **[DEPLOY.md](DEPLOY.md)** | Step-by-step VPS deployment guide | Manual |
-| **[/api-docs](http://localhost:8747/api-docs)** | Interactive Swagger API documentation | Auto (from JSDoc) |
+| **[/dashboard](http://localhost:8747/dashboard)** | Real-time React SPA monitoring dashboard & Mission Control | New (v2) |
 
 ### Keeping Docs Updated
 
