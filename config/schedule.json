@@ -1,0 +1,41 @@
+{
+  "defaultFrequency": "weekly",
+  "defaultCron": "30 20 * * 6",
+  "timezone": "UTC",
+
+  "cities": [
+    { "name": "Delhi, India",                      "frequency": "weekly",  "priority": 1 },
+    { "name": "Gurgaon, Haryana, India",            "frequency": "weekly",  "priority": 1 },
+    { "name": "Noida, Uttar Pradesh, India",        "frequency": "weekly",  "priority": 1 },
+    { "name": "Ghaziabad, Uttar Pradesh, India",    "frequency": "weekly",  "priority": 1 },
+    { "name": "Mumbai, Maharashtra, India",         "frequency": "weekly",  "priority": 2 },
+    { "name": "Bangalore, Karnataka, India",        "frequency": "weekly",  "priority": 2 },
+    { "name": "Pune, Maharashtra, India",           "frequency": "biweekly","priority": 3 },
+    { "name": "Hyderabad, Telangana, India",        "frequency": "biweekly","priority": 3 },
+    { "name": "Chennai, Tamil Nadu, India",         "frequency": "biweekly","priority": 3 },
+    { "name": "Kolkata, West Bengal, India",        "frequency": "biweekly","priority": 3 },
+    { "name": "Ahmedabad, Gujarat, India",          "frequency": "monthly", "priority": 4 },
+    { "name": "Jaipur, Rajasthan, India",           "frequency": "monthly", "priority": 4 },
+    { "name": "Surat, Gujarat, India",              "frequency": "monthly", "priority": 4 },
+    { "name": "Lucknow, Uttar Pradesh, India",      "frequency": "monthly", "priority": 4 },
+    { "name": "Chandigarh, India",                  "frequency": "monthly", "priority": 4 },
+    { "name": "Kochi, Kerala, India",               "frequency": "monthly", "priority": 5 },
+    { "name": "Indore, Madhya Pradesh, India",      "frequency": "monthly", "priority": 5 },
+    { "name": "Nagpur, Maharashtra, India",         "frequency": "monthly", "priority": 5 },
+    { "name": "Vadodara, Gujarat, India",           "frequency": "monthly", "priority": 5 },
+    { "name": "Bhopal, Madhya Pradesh, India",      "frequency": "monthly", "priority": 5 },
+    { "name": "Patna, Bihar, India",                "frequency": "monthly", "priority": 5 }
+  ],
+
+  "staleness": {
+    "enrichmentThresholdDays": 30,
+    "maxStaleDays": 90,
+    "batchSize": 50
+  },
+
+  "enrichment": {
+    "enabled": true,
+    "completenessThreshold": 60,
+    "batchSize": 30
+  }
+}

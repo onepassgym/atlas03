@@ -70,7 +70,10 @@ async function findDuplicate({ placeId, name, lat, lng, address }) {
 
 /**
  * Merge scraped data into existing gym — only fills missing fields.
- * Returns a flat $set object (no nested $push; handled separately).
+ * 
+ * @deprecated This function is no longer used in the main pipeline.
+ * Dedup + merge logic has been integrated into upsertGym.js.
+ * Kept here only for potential standalone script usage.
  */
 function mergeGymData(existing, incoming) {
   const set = {};

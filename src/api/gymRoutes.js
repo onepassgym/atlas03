@@ -4,10 +4,60 @@ const { query, param, validationResult } = require('express-validator');
 const router  = express.Router();
 const Gym     = require('../db/gymModel');
 
-function ok(res, data)       { res.json({ success: true, ...data }); }
-function err(res, msg, s=500){ res.status(s).json({ success: false, error: msg }); }
-function validate(req, res)  { const e = validationResult(req); if (!e.isEmpty()) { res.status(400).json({ success: false, errors: e.array() }); return true; } return false; }
+const { ok, err, validate } = require('../utils/apiUtils');
 
+/**
+ * @swagger
+ * tags:
+ *   name: Gyms
+ *   description: Query and view scraped fitness venues
+ */
+
+/**
+ * @swagger
+ * /api/gyms:
+ *   get:
+ *     summary: List gyms with advanced filtering
+ *     tags: [Gyms]
+ *     parameters:
+ *       - in: query
+ *         name: city
+ *         schema:
+ *           type: string
+ *         description: Area name (regex search)
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: minRating
+ *         schema:
+ *           type: number
+ *           format: float
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [rating, totalReviews, name, createdAt]
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Text search on name/address
+ *     responses:
+ *       200:
+ *         description: Paginated list of gyms
+ */
 // GET /api/gyms  — list with filters
 router.get('/',
   query('city').optional().trim(),
@@ -41,6 +91,40 @@ router.get('/',
   }
 );
 
+/**
+ * @swagger
+ * /api/gyms/nearby:
+ *   get:
+ *     summary: Find gyms near coordinates (Geospatial)
+ *     tags: [Gyms]
+ *     parameters:
+ *       - in: query
+ *         name: lat
+ *         required: true
+ *         schema:
+ *           type: number
+ *           format: float
+ *       - in: query
+ *         name: lng
+ *         required: true
+ *         schema:
+ *           type: number
+ *           format: float
+ *       - in: query
+ *         name: radiusKm
+ *         schema:
+ *           type: number
+ *           format: float
+ *           default: 5
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: List of nearby gyms
+ */
 // GET /api/gyms/nearby  — geospatial
 router.get('/nearby',
   query('lat').isFloat(),
@@ -65,6 +149,16 @@ router.get('/nearby',
   }
 );
 
+/**
+ * @swagger
+ * /api/gyms/stats:
+ *   get:
+ *     summary: Get overall venue statistics
+ *     tags: [Gyms]
+ *     responses:
+ *       200:
+ *         description: Statistics object
+ */
 // GET /api/gyms/stats
 router.get('/stats', async (_, res) => {
   try {
@@ -84,6 +178,59 @@ router.get('/stats', async (_, res) => {
   } catch (e) { err(res, e.message); }
 });
 
+// GET /api/gyms/export — download all gym data as JSON
+router.get('/export', async (req, res) => {
+  res.setHeader('Content-disposition', 'attachment; filename=gyms-export.json');
+  res.setHeader('Content-type', 'application/json');
+  
+  res.write('[\n');
+  let first = true;
+  
+  const cursor = Gym.find().select('-reviews -photos.localPath').lean().cursor();
+  
+  cursor.on('data', (doc) => {
+    if (!first) {
+      res.write(',\n');
+    }
+    res.write(JSON.stringify(doc));
+    first = false;
+  });
+  
+  cursor.on('error', (e) => {
+    // If headers are already sent, we can't send an error JSON nicely.
+    // Ensure stream ends.
+    if (!res.headersSent) {
+      err(res, e.message);
+    } else {
+      res.end('\n]'); // attempt graceful recovery
+    }
+  });
+
+  cursor.on('end', () => {
+    res.write('\n]');
+    res.end();
+  });
+});
+
+
+/**
+ * @swagger
+ * /api/gyms/{id}:
+ *   get:
+ *     summary: Get full details for a specific gym
+ *     tags: [Gyms]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Full gym object with reviews and photos
+ *       404:
+ *         description: Gym not found
+ */
 // GET /api/gyms/:id
 router.get('/:id', param('id').isMongoId(), async (req, res) => {
   if (validate(req, res)) return;

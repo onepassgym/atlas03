@@ -1,5 +1,6 @@
 'use strict';
 const { Queue } = require('bullmq');
+const Redis = require('ioredis');
 const cfg      = require('../../config');
 const logger   = require('../utils/logger');
 
@@ -8,6 +9,16 @@ const connection = {
   port:     cfg.redis.port,
   password: cfg.redis.password,
 };
+
+// Shared Redis client for cancellation flags
+const redis = new Redis({
+  host:     cfg.redis.host,
+  port:     cfg.redis.port,
+  password: cfg.redis.password || undefined,
+  lazyConnect: true,
+  maxRetriesPerRequest: 3,
+});
+redis.connect().catch(() => {});
 
 function makeQueue(name, jobOpts = {}) {
   const q = new Queue(name, {
@@ -77,4 +88,64 @@ async function clearCrawlQueue() {
   await crawlQueue.obliterate({ force: true });
 }
 
-module.exports = { crawlQueue, addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus, getBullJobStatus: getQueueJobStatus, clearCrawlQueue };
+// ── Cancellation system (Redis-backed for fast polling) ──────────────────────
+
+/**
+ * Set a cancellation flag in Redis. The worker polls this mid-crawl.
+ * TTL of 1 hour prevents stale flags from accumulating.
+ */
+async function requestCancelJob(jobId) {
+  await redis.set(`atlas05:cancel:${jobId}`, '1', 'EX', 3600);
+  logger.info(`🛑 Cancel requested for job: ${jobId}`);
+}
+
+/**
+ * Check if a job has been flagged for cancellation.
+ * Called by the worker in its scraping loops.
+ */
+async function isJobCancelled(jobId) {
+  try {
+    const flag = await redis.get(`atlas05:cancel:${jobId}`);
+    return flag === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Clear the cancellation flag after the worker has handled it.
+ */
+async function clearCancelFlag(jobId) {
+  await redis.del(`atlas05:cancel:${jobId}`);
+}
+
+/**
+ * Remove a BullMQ job if it's still waiting in the queue.
+ * Returns true if removed, false if it was already active/done.
+ */
+async function removeBullJob(jobId) {
+  try {
+    const job = await crawlQueue.getJob(jobId);
+    if (!job) return false;
+    const state = await job.getState();
+    if (state === 'waiting' || state === 'delayed') {
+      await job.remove();
+      return true;
+    }
+    return false;
+  } catch (_) { return false; }
+}
+
+module.exports = {
+  crawlQueue,
+  addCityJob,
+  addGymNameJob,
+  getQueueStats,
+  getQueueJobStatus,
+  getBullJobStatus: getQueueJobStatus,
+  clearCrawlQueue,
+  requestCancelJob,
+  isJobCancelled,
+  clearCancelFlag,
+  removeBullJob,
+};

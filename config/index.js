@@ -9,7 +9,7 @@ const isProd = env === 'production' || env === 'prod';
  */
 function getEnv(key, defaultValue) {
   const specificKey = isProd ? `PROD_${key}` : `DEV_${key}`;
-  return process.env[specificKey] || process.env[key] || defaultValue;
+  return process.env[key] || process.env[specificKey] || defaultValue;
 }
 
 module.exports = {

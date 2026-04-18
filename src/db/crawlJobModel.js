@@ -13,7 +13,7 @@ const CrawlJobSchema = new mongoose.Schema({
 
   status: {
     type:    String,
-    enum:    ['queued','running','completed','failed','partial'],
+    enum:    ['queued','running','completed','failed','partial','cancelled'],
     default: 'queued',
   },
 

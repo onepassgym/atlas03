@@ -1,23 +1,53 @@
 'use strict';
 const express = require('express');
 const fs      = require('fs');
+const fsp     = fs.promises;
 const path    = require('path');
-const { query, validationResult } = require('express-validator');
+const { body, query, validationResult } = require('express-validator');
 const router  = express.Router();
 const cfg     = require('../../config');
 const logger  = require('../utils/logger');
+const { ok, err, validate } = require('../utils/apiUtils');
+const {
+  getScheduleConfig,
+  saveScheduleConfig,
+  runScheduledCrawl,
+  queueStaleGyms,
+  queueIncompleteGyms,
+  scheduleNCRCrawl,
+  queueCity,
+} = require('../services/schedulerService');
 
 const LOG_DIR = cfg.log.dir;
 
-function ok(res, data) { res.json({ success: true, ...data }); }
-function err(res, msg, status = 500) { res.status(status).json({ success: false, error: msg }); }
+/**
+ * @swagger
+ * tags:
+ *   name: System
+ *   description: Logging, scheduling, and utility operations
+ */
 
-function validate(req, res) {
-  const e = validationResult(req);
-  if (!e.isEmpty()) { res.status(400).json({ success: false, errors: e.array() }); return true; }
-  return false;
-}
-
+/**
+ * @swagger
+ * /api/system/logs:
+ *   get:
+ *     summary: Retrieve log files or tail a specific log
+ *     tags: [System]
+ *     parameters:
+ *       - in: query
+ *         name: file
+ *         schema:
+ *           type: string
+ *         description: Log filename (e.g. app-2026-04-12.log)
+ *       - in: query
+ *         name: tail
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *     responses:
+ *       200:
+ *         description: Log content or index
+ */
 // GET /api/system/logs — lists all log files or tails a specific one
 router.get('/logs',
   query('file').optional().trim(),
@@ -27,21 +57,33 @@ router.get('/logs',
     const { file, tail = 100 } = req.query;
 
     try {
-      if (!fs.existsSync(LOG_DIR)) {
+      try {
+        await fsp.access(LOG_DIR);
+      } catch {
         return err(res, 'Log directory not found', 404);
       }
 
-      const files = fs.readdirSync(LOG_DIR)
-        .filter(f => f.endsWith('.log'))
-        .sort((a, b) => fs.statSync(path.join(LOG_DIR, b)).mtimeMs - fs.statSync(path.join(LOG_DIR, a)).mtimeMs);
+      const filesList = await fsp.readdir(LOG_DIR);
+      const fileStats = await Promise.all(
+        filesList
+          .filter(f => f.endsWith('.log'))
+          .map(async f => {
+            const stats = await fsp.stat(path.join(LOG_DIR, f));
+            return { name: f, stats };
+          })
+      );
+      
+      const files = fileStats
+        .sort((a, b) => b.stats.mtimeMs - a.stats.mtimeMs)
+        .map(f => f.name);
 
       if (!file) {
         return ok(res, { 
           message: 'Specify ?file=filename to view content. Latest files listed below.',
-          files: files.map(f => ({
-            name: f,
-            size: (fs.statSync(path.join(LOG_DIR, f)).size / 1024).toFixed(2) + ' KB',
-            modified: fs.statSync(path.join(LOG_DIR, f)).mtime
+          files: fileStats.map(f => ({
+            name: f.name,
+            size: (f.stats.size / 1024).toFixed(2) + ' KB',
+            modified: f.stats.mtime
           }))
         });
       }
@@ -50,11 +92,13 @@ router.get('/logs',
       const safeFile = path.basename(file);
       const filePath = path.join(LOG_DIR, safeFile);
 
-      if (!fs.existsSync(filePath)) {
+      try {
+        await fsp.access(filePath);
+      } catch {
         return err(res, 'File not found', 404);
       }
 
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = await fsp.readFile(filePath, 'utf-8');
       const lines = content.split('\n').filter(Boolean);
       const resultLines = lines.slice(-tail);
 
@@ -70,14 +114,22 @@ router.get('/logs',
 // GET /api/system/logs/latest — shortcut to tail the latest app log
 router.get('/logs/latest', async (req, res) => {
   try {
-    const files = fs.readdirSync(LOG_DIR)
-      .filter(f => f.startsWith('app-') && f.endsWith('.log'))
-      .sort((a, b) => fs.statSync(path.join(LOG_DIR, b)).mtimeMs - fs.statSync(path.join(LOG_DIR, a)).mtimeMs);
+    const filesList = await fsp.readdir(LOG_DIR);
+    const fileStats = await Promise.all(
+      filesList
+        .filter(f => f.startsWith('app-') && f.endsWith('.log'))
+        .map(async f => {
+          const stats = await fsp.stat(path.join(LOG_DIR, f));
+          return { name: f, stats };
+        })
+    );
+    
+    fileStats.sort((a, b) => b.stats.mtimeMs - a.stats.mtimeMs);
 
-    if (!files.length) return err(res, 'No app logs found', 404);
+    if (!fileStats.length) return err(res, 'No app logs found', 404);
 
-    const filePath = path.join(LOG_DIR, files[0]);
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const filePath = path.join(LOG_DIR, fileStats[0].name);
+    const content = await fsp.readFile(filePath, 'utf-8');
     const lines = content.split('\n').filter(Boolean);
     const tail = req.query.tail ? parseInt(req.query.tail) : 100;
     
@@ -85,6 +137,207 @@ router.get('/logs/latest', async (req, res) => {
   } catch (e) {
     err(res, e.message);
   }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SCHEDULE MANAGEMENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @swagger
+ * /api/system/schedule:
+ *   get:
+ *     summary: View the full scheduling configuration
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: Schedule config object
+ */
+// GET /api/system/schedule — view full schedule config
+router.get('/schedule', async (req, res) => {
+  try {
+    const config = getScheduleConfig();
+    ok(res, { schedule: config });
+  } catch (e) {
+    err(res, e.message);
+  }
+});
+
+// POST /api/system/schedule — update full schedule config
+router.post('/schedule', express.json(), async (req, res) => {
+  try {
+    const config = getScheduleConfig();
+    const { cities, staleness, enrichment, defaultFrequency, timezone } = req.body;
+
+    // Merge provided fields into existing config
+    if (cities !== undefined) {
+      if (!Array.isArray(cities)) return err(res, 'cities must be an array', 400);
+      // Accept both string format and object format
+      config.cities = cities.map(c => {
+        if (typeof c === 'string') return { name: c, frequency: config.defaultFrequency || 'weekly', priority: 3 };
+        return { name: c.name || c.city, frequency: c.frequency || config.defaultFrequency || 'weekly', priority: c.priority || 3 };
+      });
+    }
+    if (staleness) config.staleness = { ...config.staleness, ...staleness };
+    if (enrichment) config.enrichment = { ...config.enrichment, ...enrichment };
+    if (defaultFrequency) config.defaultFrequency = defaultFrequency;
+    if (timezone) config.timezone = timezone;
+
+    saveScheduleConfig(config);
+    logger.info(`Schedule updated: ${config.cities.length} cities configured`);
+    ok(res, { message: 'Schedule updated successfully', schedule: config });
+  } catch (e) {
+    err(res, e.message);
+  }
+});
+
+// POST /api/system/schedule/city — add a single city to the schedule
+router.post('/schedule/city', express.json(),
+  body('name').notEmpty().trim(),
+  body('frequency').optional().isIn(['weekly', 'biweekly', 'monthly']),
+  body('priority').optional().isInt({ min: 1, max: 10 }),
+  async (req, res) => {
+    if (validate(req, res)) return;
+    try {
+      const config = getScheduleConfig();
+      const { name, frequency = config.defaultFrequency || 'weekly', priority = 3 } = req.body;
+
+      // Check if city already exists
+      const exists = config.cities.find(c => c.name.toLowerCase() === name.toLowerCase());
+      if (exists) {
+        // Update existing
+        exists.frequency = frequency;
+        exists.priority = priority;
+      } else {
+        config.cities.push({ name, frequency, priority });
+      }
+
+      saveScheduleConfig(config);
+      ok(res, {
+        message: exists ? `Updated "${name}" schedule` : `Added "${name}" to schedule`,
+        city: { name, frequency, priority },
+        totalCities: config.cities.length,
+      });
+    } catch (e) { err(res, e.message); }
+  }
+);
+
+/**
+ * @swagger
+ * /api/system/schedule/city:
+ *   delete:
+ *     summary: Remove a city from the schedule
+ *     tags: [System]
+ *     parameters:
+ *       - in: query
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: City removed
+ *       404:
+ *         description: City not found
+ */
+// DELETE /api/system/schedule/city — remove a city from the schedule
+router.delete('/schedule/city',
+  query('name').notEmpty().trim(),
+  async (req, res) => {
+    if (validate(req, res)) return;
+    try {
+      const config = getScheduleConfig();
+      const { name } = req.query;
+      const before = config.cities.length;
+      config.cities = config.cities.filter(c => c.name.toLowerCase() !== name.toLowerCase());
+
+      if (config.cities.length === before) {
+        return err(res, `City "${name}" not found in schedule`, 404);
+      }
+
+      saveScheduleConfig(config);
+      ok(res, { message: `Removed "${name}" from schedule`, totalCities: config.cities.length });
+    } catch (e) { err(res, e.message); }
+  }
+);
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SCHEDULE TRIGGERS — manually fire scheduled operations
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @swagger
+ * /api/system/schedule/trigger:
+ *   post:
+ *     summary: Manually trigger a scheduled crawl
+ *     tags: [System]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               frequency:
+ *                 type: string
+ *                 enum: [weekly, biweekly, monthly, all]
+ *               city:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Crawl(s) queued
+ */
+// POST /api/system/schedule/trigger — trigger crawl by frequency
+router.post('/schedule/trigger', express.json(),
+  body('frequency').optional().isIn(['weekly', 'biweekly', 'monthly', 'all']),
+  body('city').optional().isString().trim(),
+  async (req, res) => {
+    if (validate(req, res)) return;
+    try {
+      const { frequency = 'all', city } = req.body;
+
+      // If specific city provided, queue just that one
+      if (city) {
+        const jobId = await queueCity(city, 'manual-trigger');
+        if (!jobId) return ok(res, { message: `City "${city}" already has an active job`, city }, 409);
+        return ok(res, { message: `Crawl triggered for "${city}"`, jobId, trackAt: `/api/crawl/status/${jobId}` }, 202);
+      }
+
+      // Trigger by frequency
+      let results;
+      if (frequency === 'all') {
+        results = await scheduleNCRCrawl('manual-trigger-all');
+      } else {
+        results = await runScheduledCrawl(frequency, 'manual-trigger');
+      }
+
+      ok(res, {
+        message: `${results.length} cities queued for ${frequency} crawl`,
+        jobs: results,
+      }, 202);
+    } catch (e) { err(res, e.message); }
+  }
+);
+
+// POST /api/system/schedule/trigger/stale — re-crawl stale gyms
+router.post('/schedule/trigger/stale', async (req, res) => {
+  try {
+    const results = await queueStaleGyms('manual-trigger');
+    ok(res, {
+      message: `${results.length} stale gyms queued for re-crawl`,
+      jobs: results,
+    }, 202);
+  } catch (e) { err(res, e.message); }
+});
+
+// POST /api/system/schedule/trigger/enrichment — re-crawl incomplete gyms
+router.post('/schedule/trigger/enrichment', async (req, res) => {
+  try {
+    const results = await queueIncompleteGyms('manual-trigger');
+    ok(res, {
+      message: `${results.length} incomplete gyms queued for enrichment re-crawl`,
+      jobs: results,
+    }, 202);
+  } catch (e) { err(res, e.message); }
 });
 
 module.exports = router;
