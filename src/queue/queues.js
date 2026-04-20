@@ -35,8 +35,15 @@ function makeQueue(name, jobOpts = {}) {
   return q;
 }
 
-const crawlQueue = makeQueue('atlas06-crawl');
+const crawlQueue      = makeQueue('atlas06-crawl');
 const chainCrawlQueue = makeQueue('atlas06-chain-crawl');
+// Phase 5: dedicated media download queue — processed by mediaWorker.js
+const mediaQueue      = makeQueue('atlas06-media', {
+  attempts:         3,
+  backoff:          { type: 'exponential', delay: 3000 },
+  removeOnComplete: 100,
+  removeOnFail:     50,
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -90,6 +97,43 @@ async function getChainQueueStats() {
     chainCrawlQueue.getDelayedCount(),
   ]);
   return { waiting, active, completed, failed, delayed };
+}
+
+// Phase 5: enqueue media download for a single gym (non-blocking)
+async function addMediaJob(gymId, slug, photoUrls) {
+  if (!photoUrls?.length) return null;
+  const job = await mediaQueue.add(
+    'media-download',
+    { gymId: String(gymId), slug, photoUrls },
+    { jobId: `media:${gymId}`, removeOnComplete: true }
+  );
+  return job;
+}
+
+async function getMediaQueueStats() {
+  const [waiting, active, completed, failed] = await Promise.all([
+    mediaQueue.getWaitingCount(),
+    mediaQueue.getActiveCount(),
+    mediaQueue.getCompletedCount(),
+    mediaQueue.getFailedCount(),
+  ]);
+  return { waiting, active, completed, failed };
+}
+
+// Phase 9: Enqueue a batch of URLs as a standalone scrape job.
+// Multiple batches from the same city compete for any available worker replica.
+async function addBatchScrapeJob(parentJobId, cityName, urls, batchIndex, mode) {
+  const batchJobId = `${parentJobId}:batch:${batchIndex}`;
+  const job = await crawlQueue.add(
+    'batch-scrape',
+    {
+      type: 'batch',
+      parentJobId,
+      input: { cityName, urls, batchIndex, mode },
+    },
+    { jobId: batchJobId, priority: 2 }
+  );
+  return job;
 }
 
 async function getQueueJobStatus(jobId) {
@@ -161,11 +205,15 @@ async function removeBullJob(jobId) {
 module.exports = {
   crawlQueue,
   chainCrawlQueue,
+  mediaQueue,
   addCityJob,
   addGymNameJob,
   addChainJob,
+  addMediaJob,
+  addBatchScrapeJob,
   getQueueStats,
   getChainQueueStats,
+  getMediaQueueStats,
   getQueueJobStatus,
   getBullJobStatus: getQueueJobStatus,
   clearCrawlQueue,

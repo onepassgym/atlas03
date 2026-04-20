@@ -97,46 +97,55 @@ async function resolvePlaceType(rawLabel) {
 
 async function resolveAmenities(rawLabels = []) {
   if (!Array.isArray(rawLabels) || !rawLabels.length) return [];
-  const ids = [];
-  for (const label of rawLabels) {
-    const slug = slugifyValue(label);
-    const am = await Amenity.findOneAndUpdate(
-      { slug },
-      { $setOnInsert: { slug, label } },
-      { upsert: true, new: true }
-    );
-    if (am) ids.push(am._id);
-  }
-  return ids;
+
+  // Phase 3a: Single bulkWrite instead of N sequential findOneAndUpdate calls
+  const ops = rawLabels.map(label => ({
+    updateOne: {
+      filter: { slug: slugifyValue(label) },
+      update: { $setOnInsert: { slug: slugifyValue(label), label } },
+      upsert: true,
+    }
+  }));
+  await Amenity.bulkWrite(ops, { ordered: false });
+
+  // One batched read to get all _ids
+  const slugs = rawLabels.map(l => slugifyValue(l));
+  const docs  = await Amenity.find({ slug: { $in: slugs } }, { _id: 1 }).lean();
+  return docs.map(d => d._id);
 }
 
 // ── Normalized Data Ingestion Helpers ────────────────────────────────────────
 
 async function upsertPhotos(gymId, rawPhotos = [], now) {
   if (!rawPhotos.length) return;
-  for (const p of rawPhotos) {
-    if (!p.publicUrl) continue;
-    await Photo.updateOne(
-      { publicUrl: p.publicUrl },
-      { 
-        $setOnInsert: { 
-          gymId,
-          originalUrl: p.originalUrl,
-          localPath: p.localPath,
-          publicUrl: p.publicUrl,
-          thumbnailUrl: p.thumbnailUrl,
-          type: p.type,
-          width: p.width,
-          height: p.height,
-          sizeBytes: p.sizeBytes,
-          isCover: p.isCover || false,
-          downloadedAt: p.downloadedAt || now,
-          createdAt: now
-        }
-      },
-      { upsert: true }
-    );
-  }
+
+  // Phase 3b: Single bulkWrite instead of N sequential updateOne calls
+  const ops = rawPhotos
+    .filter(p => p.publicUrl)
+    .map(p => ({
+      updateOne: {
+        filter: { publicUrl: p.publicUrl },
+        update: {
+          $setOnInsert: {
+            gymId,
+            originalUrl:  p.originalUrl,
+            localPath:    p.localPath,
+            publicUrl:    p.publicUrl,
+            thumbnailUrl: p.thumbnailUrl,
+            type:         p.type,
+            width:        p.width,
+            height:       p.height,
+            sizeBytes:    p.sizeBytes,
+            isCover:      p.isCover || false,
+            downloadedAt: p.downloadedAt || now,
+            createdAt:    now,
+          }
+        },
+        upsert: true,
+      }
+    }));
+
+  if (ops.length) await Photo.bulkWrite(ops, { ordered: false });
 }
 
 async function upsertCrawlMeta(gymId, rawMeta, now) {
