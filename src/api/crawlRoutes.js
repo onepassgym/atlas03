@@ -68,7 +68,9 @@ router.post('/city',
   body('force').optional().isBoolean(),
   async (req, res) => {
     if (validate(req, res)) return;
-    const { cityName, categories = FITNESS_CATEGORIES, force = false } = req.body;
+    const { cityName, force = false } = req.body;
+    // Ensure categories is an array. Default to full list if missing/null.
+    const categories = Array.isArray(req.body.categories) ? req.body.categories : FITNESS_CATEGORIES;
 
     try {
       // Job dedup guard
@@ -165,7 +167,8 @@ router.post('/batch',
   body('force').optional().isBoolean(),
   async (req, res) => {
     if (validate(req, res)) return;
-    const { cities, categories = FITNESS_CATEGORIES, force = false } = req.body;
+    const { cities, force = false } = req.body;
+    const categories = Array.isArray(req.body.categories) ? req.body.categories : FITNESS_CATEGORIES;
     const jobs = [];
     const skipped = [];
     try {

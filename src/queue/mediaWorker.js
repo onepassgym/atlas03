@@ -1,0 +1,154 @@
+'use strict';
+/**
+ * mediaWorker.js — Dedicated BullMQ worker for photo download + resize.
+ *
+ * Consumes jobs from the 'atlas06-media' queue (enqueued by gymProcessor.js).
+ * Does NOT use Playwright — purely HTTP downloads + Sharp image processing.
+ * Can safely run at high concurrency (8-10) since it is I/O bound, not CPU bound.
+ *
+ * Each job payload: { gymId, slug, photoUrls }
+ * On completion:    gym document's photos[], coverPhoto, totalPhotos, and
+ *                   crawlMeta.mediaStatus are updated in MongoDB.
+ */
+require('dotenv').config();
+
+const { Worker }             = require('bullmq');
+const { connectDB }          = require('../db/connection');
+const { downloadAllMedia }   = require('../media/downloader');
+const Gym                    = require('../db/gymModel');
+const Photo                  = require('../db/photoModel');
+const cfg                    = require('../../config');
+const logger                 = require('../utils/logger');
+
+const connection = {
+  host:     cfg.redis.host,
+  port:     cfg.redis.port,
+  password: cfg.redis.password || undefined,
+};
+
+// Media workers are I/O bound — run many in parallel
+const MEDIA_CONCURRENCY = parseInt(process.env.MEDIA_WORKER_CONCURRENCY || '8', 10);
+
+// ── Job handler ───────────────────────────────────────────────────────────────
+
+async function processMediaJob(job) {
+  const { gymId, slug, photoUrls } = job.data;
+
+  if (!photoUrls?.length) {
+    logger.info(`[media] No photos to download for gym ${gymId}`);
+    return { downloaded: 0 };
+  }
+
+  logger.info(`[media] ⬇  Downloading ${photoUrls.length} photos for ${slug} (gymId: ${gymId})`);
+
+  try {
+    // Download + resize all photos (4 concurrent axios+sharp calls inside)
+    const media = await downloadAllMedia(photoUrls, slug);
+
+    const downloaded = media.filter(m => m?.localPath).length;
+    const failed     = media.filter(m => !m?.localPath).length;
+
+    if (!media.length) {
+      logger.warn(`[media] All downloads failed for ${slug}`);
+      await Gym.findByIdAndUpdate(gymId, {
+        $set: { 'crawlMeta.mediaStatus': 'failed', updatedAt: new Date() }
+      });
+      return { downloaded: 0, failed: photoUrls.length };
+    }
+
+    // Batch-upsert photo records into gym_photos collection
+    const now = new Date();
+    const photoOps = media
+      .filter(m => m?.publicUrl)
+      .map(m => ({
+        updateOne: {
+          filter: { publicUrl: m.publicUrl },
+          update: {
+            $setOnInsert: {
+              gymId,
+              originalUrl:  m.originalUrl,
+              localPath:    m.localPath,
+              publicUrl:    m.publicUrl,
+              thumbnailUrl: m.thumbnailUrl,
+              type:         m.type || 'photo',
+              width:        m.width,
+              height:       m.height,
+              sizeBytes:    m.sizeBytes,
+              downloadedAt: m.downloadedAt || now,
+              createdAt:    now,
+            }
+          },
+          upsert: true,
+        }
+      }));
+
+    if (photoOps.length) {
+      await Photo.bulkWrite(photoOps, { ordered: false });
+    }
+
+    // Update gym document with resolved photo data
+    const coverPhoto = media.find(m => m?.localPath) || null;
+    await Gym.findByIdAndUpdate(gymId, {
+      $set: {
+        photos:      media,
+        coverPhoto,
+        totalPhotos: media.length,
+        'crawlMeta.mediaStatus': failed > 0 ? 'partial' : 'completed',
+        updatedAt:   now,
+      }
+    });
+
+    logger.info(`[media] ✅ ${slug}: ${downloaded} ok, ${failed} failed`);
+    return { downloaded, failed };
+
+  } catch (err) {
+    logger.error(`[media] ❌ Error for ${slug}: ${err.message}`);
+    // Mark as failed so enrichment job can retry
+    try {
+      await Gym.findByIdAndUpdate(gymId, {
+        $set: { 'crawlMeta.mediaStatus': 'failed', updatedAt: new Date() }
+      });
+    } catch (_) {}
+    throw err;
+  }
+}
+
+// ── Worker startup ────────────────────────────────────────────────────────────
+
+async function start() {
+  await connectDB();
+
+  const worker = new Worker('atlas06-media', processMediaJob, {
+    connection,
+    concurrency: MEDIA_CONCURRENCY,
+    lockDuration: 120_000, // 2 min — media jobs are fast
+  });
+
+  worker.on('completed', (job, result) => {
+    logger.info(`[media] ✓ Job ${job.id} done: ${result?.downloaded ?? 0} photos downloaded`);
+  });
+  worker.on('failed', (job, err) => {
+    logger.error(`[media] ✗ Job ${job?.id} failed: ${err.message}`);
+  });
+  worker.on('error', (err) => {
+    logger.error(`[media] Worker error: ${err.message}`);
+  });
+
+  logger.info(`\n📷 Atlas06 Media Worker started [concurrency: ${MEDIA_CONCURRENCY}]`);
+
+  // ── Graceful shutdown ────────────────────────────────────────────────────
+  const shutdown = async (signal) => {
+    logger.info(`\n⏳ Media worker received ${signal} — draining...`);
+    try { await worker.close(); } catch (_) {}
+    logger.info('👋 Media worker shut down.');
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
+}
+
+start().catch(err => {
+  console.error('Media worker startup error:', err);
+  process.exit(1);
+});

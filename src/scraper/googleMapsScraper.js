@@ -7,7 +7,10 @@ const logger = require('../utils/logger');
 // ── Activate stealth anti-detection ──────────────────────────────────────────
 chromium.use(stealthPlugin());
 
-// ── All fitness category search terms ────────────────────────────────────────
+// Phase 6b: Trimmed from 16 →10 categories — removed low-yield entries
+// that heavily overlap with 'gym' and 'fitness center':
+// dropped: functional training gym, strength training gym, health club,
+//          sports club, zumba class, cycling studio
 const FITNESS_CATEGORIES = [
   'gym',
   'fitness center',
@@ -18,13 +21,7 @@ const FITNESS_CATEGORIES = [
   'boxing gym',
   'dance fitness studio',
   'personal training studio',
-  'health club',
-  'sports club',
-  'functional training gym',
-  'strength training gym',
-  'cycling studio',
   'swimming club',
-  'zumba class',
 ];
 
 // ── User-Agent rotation pool ─────────────────────────────────────────────────
@@ -82,8 +79,18 @@ class BrowserManager {
       extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
     });
 
-    // Speed up: abort heavy resources on search pages
-    await this.ctx.route('**/*.{woff,woff2,ttf,otf}', r => r.abort());
+    // ── Phase 1a: Aggressive resource blocking ────────────────────────────────
+    // Block images, stylesheets, fonts, media — we only need DOM text content.
+    // Also block tracking/analytics domains to reduce noise and page weight.
+    await this.ctx.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      const blocked = ['image', 'stylesheet', 'font', 'media', 'other'];
+      if (blocked.includes(type)) return route.abort();
+      const url = route.request().url();
+      if (/google-analytics|doubleclick|googlesyndication|facebook\.net|hotjar|clarity\.ms/.test(url))
+        return route.abort();
+      return route.continue();
+    });
 
     return this.ctx;
   }
@@ -112,13 +119,19 @@ async function searchGymsInCity(page, cityName, category) {
     await page.goto(url, { waitUntil: 'commit', timeout: cfg.scraper.timeout });
   }
 
-  await sleep(2000, 3000);
+  // Phase 1b: Reduced from sleep(2000, 3000)
+  await sleep(1000, 1500);
 
   // Dismiss cookie banner if present
   for (const sel of ['button:has-text("Accept all")', 'button:has-text("Agree")', 'button[aria-label="Accept all"]']) {
     try {
       const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 2000 })) { await btn.click(); await sleep(800, 1200); break; }
+      if (await btn.isVisible({ timeout: 1500 })) {
+        await btn.click();
+        // Phase 1b: Reduced from sleep(800, 1200)
+        await sleep(300, 500);
+        break;
+      }
     } catch (_) {}
   }
 
@@ -147,7 +160,8 @@ async function searchGymsInCity(page, cityName, category) {
     } catch (_) {
       await page.mouse.wheel(0, 1200);
     }
-    await sleep(1200, 2200);
+    // Phase 1b: Reduced from sleep(1200, 2200)
+    await sleep(600, 1000);
 
     if (gymUrls.size === lastSize) { if (++noNewFor >= 5) break; }
     else noNewFor = 0;
@@ -159,11 +173,19 @@ async function searchGymsInCity(page, cityName, category) {
 }
 
 // ── Detail: scrape full gym data from a place page ───────────────────────────
+// Phase 4: mode controls scrape depth
+//   'fast'     → core data only, no reviews/photos tab navigation
+//   'standard' → core + about tab + 30 reviews + 20 photos (default)
+//   'deep'     → core + about tab + 150 reviews + 80 photos
 
-async function scrapeGymDetail(page, url) {
+async function scrapeGymDetail(page, url, mode = 'standard') {
+  const maxReviews = mode === 'deep' ? 150 : (mode === 'fast' ? 0 : cfg.scraper.maxReviews);
+  const maxPhotos  = mode === 'deep' ? 80  : (mode === 'fast' ? 0 : cfg.scraper.maxPhotos);
+
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: cfg.scraper.timeout });
-    await sleep(1800, 2800);
+    // Phase 1b: Reduced from sleep(1800, 2800)
+    await sleep(800, 1200);
   } catch (err) {
     throw new Error(`Navigation failed: ${err.message}`);
   }
@@ -244,7 +266,7 @@ async function scrapeGymDetail(page, url) {
     const pidMatch = window.location.href.match(/!1s(ChIJ[^!]+)/);
     const placeId  = pidMatch ? pidMatch[1] : null;
 
-    // Photo URLs (visible on main page)
+    // Photo URLs (visible on main page — hero images, no tab navigation needed)
     const photoUrls = [...new Set(
       [...document.querySelectorAll('button[jsaction*="heroHeaderImage"] img, .RZ66Rb img, .Uf0tqf img')]
         .map(img => img.src || img.dataset?.src)
@@ -279,14 +301,19 @@ async function scrapeGymDetail(page, url) {
 
   if (!core.name) throw new Error('Could not extract gym name — page may not have loaded correctly');
 
+  // ── Fast mode: return immediately with hero data only ────────────────────
+  if (mode === 'fast') {
+    return { ...core, reviews: [], reviewSummary: null, photoUrls: core.photoUrls };
+  }
+
   // ── About Tab (Deep Amenities) ──────────────────────────────────────────
   const deepAmenities = await scrapeAboutTab(page);
 
   // ── Reviews ──────────────────────────────────────────────────────────────
-  const { reviews, reviewSummary } = await scrapeReviews(page);
+  const { reviews, reviewSummary } = await scrapeReviews(page, maxReviews);
 
   // ── All photos tab ────────────────────────────────────────────────────────
-  const allPhotos = await scrapePhotosTab(page, core.photoUrls || []);
+  const allPhotos = await scrapePhotosTab(page, core.photoUrls || [], maxPhotos);
 
   const mergedAmenities = [...new Set([...(core.amenities || []), ...(deepAmenities || [])])];
 
@@ -297,9 +324,10 @@ async function scrapeGymDetail(page, url) {
 async function scrapeAboutTab(page) {
   try {
     const tab = page.locator('button[aria-label*="About" i], button:has-text("About")').first();
-    if (!await tab.isVisible({ timeout: 2000 }).catch(() => false)) return null;
+    if (!await tab.isVisible({ timeout: 1500 }).catch(() => false)) return null;
     await tab.click();
-    await sleep(1000, 1500);
+    // Phase 1b: Reduced from sleep(1000, 1500)
+    await sleep(500, 800);
 
     return await page.evaluate(() => {
       const items = [...document.querySelectorAll('.hpLkke, .E0DTEd li, .kx8XBd, .iP2t7d')];
@@ -310,17 +338,22 @@ async function scrapeAboutTab(page) {
   }
 }
 
-// ── Scrape reviews (up to 150 per gym) ───────────────────────────────────────
+// ── Scrape reviews (up to maxReviews per gym) ─────────────────────────────────
+// Phase 4: maxReviews is now a parameter (30 for standard, 150 for deep, 0 for fast)
 
-async function scrapeReviews(page) {
+async function scrapeReviews(page, maxReviews = 30) {
   const reviews = [];
   let reviewSummary = null;
+
+  if (maxReviews === 0) return { reviews, reviewSummary };
+
   try {
     // Click Reviews tab
     const tab = page.locator('button[aria-label*="reviews" i], button:has-text("Reviews")').first();
-    if (!await tab.isVisible({ timeout: 3000 }).catch(() => false)) return { reviews, reviewSummary };
+    if (!await tab.isVisible({ timeout: 2000 }).catch(() => false)) return { reviews, reviewSummary };
     await tab.click();
-    await sleep(1500, 2200);
+    // Phase 1b: Reduced from sleep(1500, 2200)
+    await sleep(800, 1200);
 
     // Extract AI Review Summary or keywords
     try {
@@ -334,18 +367,19 @@ async function scrapeReviews(page) {
     // Sort by Newest
     try {
       const sortBtn = page.locator('button[aria-label*="Sort" i]').first();
-      if (await sortBtn.isVisible({ timeout: 2000 })) {
+      if (await sortBtn.isVisible({ timeout: 1500 })) {
         await sortBtn.click();
-        await sleep(400, 700);
-        await page.locator('li[data-index="1"], li:has-text("Newest")').first().click({ timeout: 2000 });
-        await sleep(1000, 1500);
+        await sleep(300, 500);
+        await page.locator('li[data-index="1"], li:has-text("Newest")').first().click({ timeout: 1500 });
+        // Phase 1b: Reduced from sleep(1000, 1500)
+        await sleep(600, 900);
       }
     } catch (_) {}
 
     const panel = page.locator('.m6QErb[aria-label*="review" i], .DxyBCb').first();
     let lastCount = 0; let noNew = 0;
 
-    while (reviews.length < 150) {
+    while (reviews.length < maxReviews) {
       // Expand truncated review text
       for (const btn of await page.locator('button.w8nwRe').all()) {
         try { await btn.click(); } catch (_) {}
@@ -383,7 +417,8 @@ async function scrapeReviews(page) {
 
       try { await panel.evaluate(el => el.scrollBy(0, 1800)); }
       catch (_) { await page.mouse.wheel(0, 1800); }
-      await sleep(1200, 2000);
+      // Phase 1b: Reduced from sleep(1200, 2000)
+      await sleep(500, 900);
     }
   } catch (err) {
     logger.warn(`Review scraping partial: ${err.message}`);
@@ -391,18 +426,23 @@ async function scrapeReviews(page) {
   return { reviews, reviewSummary };
 }
 
-// ── Scrape Photos tab (up to 80 photos) ──────────────────────────────────────
+// ── Scrape Photos tab (up to maxPhotos) ───────────────────────────────────────
+// Phase 4: maxPhotos is now a parameter (20 for standard, 80 for deep, 0 for fast)
 
-async function scrapePhotosTab(page, existing = []) {
+async function scrapePhotosTab(page, existing = [], maxPhotos = 20) {
   const urls = new Set(existing);
+
+  if (maxPhotos === 0) return [...urls];
+
   try {
     const tab = page.locator('button[aria-label*="Photos" i], button:has-text("Photos")').first();
-    if (!await tab.isVisible({ timeout: 3000 }).catch(() => false)) return [...urls];
+    if (!await tab.isVisible({ timeout: 2000 }).catch(() => false)) return [...urls];
     await tab.click();
-    await sleep(1500, 2200);
+    // Phase 1b: Reduced from sleep(1500, 2200)
+    await sleep(700, 1100);
 
     let last = 0; let noNew = 0;
-    while (urls.size < 80) {
+    while (urls.size < maxPhotos) {
       const imgs = await page.locator('.Uf0tqf img, .RZ66Rb img, .U39Pmb img').all();
       for (const img of imgs) {
         try {
@@ -414,7 +454,8 @@ async function scrapePhotosTab(page, existing = []) {
       else noNew = 0;
       last = urls.size;
       await page.mouse.wheel(0, 1500);
-      await sleep(900, 1600);
+      // Phase 1b: Reduced from sleep(900, 1600)
+      await sleep(400, 800);
     }
   } catch (err) {
     logger.warn(`Photo tab scraping partial: ${err.message}`);
