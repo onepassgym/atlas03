@@ -3,7 +3,7 @@ require('dotenv').config();
 
 const { Worker } = require('bullmq');
 const { connectDB }   = require('../db/connection');
-const { BrowserManager, searchGymsInCity, scrapeGymDetail, FITNESS_CATEGORIES } = require('../scraper/googleMapsScraper');
+const { BrowserManager, searchGymsInCity, scrapeGymDetail, FITNESS_CATEGORIES, isBlocked } = require('../scraper/googleMapsScraper');
 const { processGym }  = require('../scraper/gymProcessor');
 const CrawlJob        = require('../db/crawlJobModel');
 const Gym             = require('../db/gymModel');   // Phase 7: pre-filter known URLs
@@ -53,6 +53,52 @@ async function shouldStop(jobId) {
   return false;
 }
 
+// ── Adaptive Throttle System ───────────────────────────────────────────────────
+// Dynamically adjusts inter-URL delay based on success/failure patterns.
+// Starts moderate, speeds up when everything is working, slows way down
+// when Google starts blocking.
+
+class AdaptiveThrottle {
+  constructor(baseMin, baseMax) {
+    this.baseMin = baseMin;
+    this.baseMax = baseMax;
+    this.multiplier = 1.0;
+    this.consecutiveSuccess = 0;
+    this.consecutiveFails = 0;
+  }
+
+  onSuccess() {
+    this.consecutiveSuccess++;
+    this.consecutiveFails = 0;
+    // Speed up slightly after 5+ consecutive successes (min multiplier 0.8)
+    if (this.consecutiveSuccess >= 5) {
+      this.multiplier = Math.max(0.8, this.multiplier - 0.05);
+    }
+  }
+
+  onFailure(isBlock = false) {
+    this.consecutiveFails++;
+    this.consecutiveSuccess = 0;
+    if (isBlock) {
+      // Google actively blocking — slam the brakes
+      this.multiplier = 4.0;
+    } else {
+      // Progressive slowdown: 1.5× → 2× → 3× → 4×
+      this.multiplier = Math.min(4.0, 1.5 + (this.consecutiveFails * 0.5));
+    }
+  }
+
+  async wait() {
+    const min = Math.round(this.baseMin * this.multiplier);
+    const max = Math.round(this.baseMax * this.multiplier);
+    await sleep(min, max);
+  }
+
+  get status() {
+    return `${this.multiplier.toFixed(2)}x (ok:${this.consecutiveSuccess} fail:${this.consecutiveFails})`;
+  }
+}
+
 // ── Phase 2: Parallel page pool URL processor ────────────────────────────────
 /**
  * Processes a list of URLs using a pool of N parallel browser pages.
@@ -70,13 +116,17 @@ async function processUrlsWithPool(browser, urls, jobId, cityName, stats, bullJo
   const total = urls.length;
   let urlIndex = 0;
   let stopReason = false;
+  const throttle = new AdaptiveThrottle(DELAY_MIN, DELAY_MAX);
 
   // Open N pages in parallel inside the shared browser context
   const poolSize = Math.min(PAGE_POOL, total);
-  logger.info(`  🔀 Opening ${poolSize} parallel pages for ${total} URLs`);
+  logger.info(`  🔀 Opening ${poolSize} parallel pages for ${total} URLs (throttle: ${DELAY_MIN}-${DELAY_MAX}ms)`);
   const pages = await Promise.all(
     Array.from({ length: poolSize }, () => browser.newPage())
   );
+
+  // Track next human pause point per-pool (shared)
+  let nextPauseAt = 5 + Math.floor(Math.random() * 4);  // First pause at URL 5-8
 
   /**
    * Worker function: each page keeps grabbing the next URL until exhausted
@@ -94,6 +144,14 @@ async function processUrlsWithPool(browser, urls, jobId, cityName, stats, bullJo
       const stop = await shouldStop(jobId);
       if (stop) { stopReason = stop; break; }
 
+      // Human-like pause: every 5-8 URLs, take a random break
+      if (idx > 0 && idx >= nextPauseAt) {
+        const pauseMs = 5000 + Math.random() * 10000;
+        logger.info(`  ☕ Human pause at URL ${idx}/${total}: ${(pauseMs/1000).toFixed(1)}s (throttle: ${throttle.status})`);
+        await sleep(pauseMs, pauseMs + 1000);
+        nextPauseAt = idx + 5 + Math.floor(Math.random() * 4);
+      }
+
       await bullJob.updateProgress(25 + Math.floor((idx / total) * 75));
 
       let scraped = null;
@@ -104,20 +162,38 @@ async function processUrlsWithPool(browser, urls, jobId, cityName, stats, bullJo
         catch (err) {
           lastError = err;
           logger.warn(`  ⚠  Attempt ${attempt}/${MAX_RETRIES} [${url.slice(-40)}]: ${err.message}`);
-          if (attempt < MAX_RETRIES) await sleep(2000 * attempt, 3500 * attempt);
+
+          // If Google blocked us, add a MUCH longer backoff
+          if (err.message.includes('Google blocked')) {
+            logger.warn('  🛑 Google block detected — cooling down for 30-60s');
+            throttle.onFailure(true);
+            await sleep(30000, 60000);
+          } else {
+            await sleep(3000 * attempt, 5000 * attempt);
+          }
         }
       }
 
       if (!scraped?.name) {
         stats.failed++;
+        throttle.onFailure(false);
         await updateJob(jobId, {
           $inc: { 'progress.failed': 1, errorCount: 1 },
           $push: { jobErrors: { message: lastError?.message || 'Could not extract gym data', url, at: new Date() } },
         });
-        // Short delay before next URL even on failure
-        await sleep(DELAY_MIN, DELAY_MAX);
+
+        // Adaptive backoff: if many consecutive failures, Google is likely blocking
+        if (throttle.consecutiveFails >= 3) {
+          logger.warn(`  🛑 ${throttle.consecutiveFails} consecutive failures — extended cooldown (throttle: ${throttle.status})`);
+          await sleep(20000, 40000);
+        } else {
+          await throttle.wait();
+        }
         continue;
       }
+
+      // Success — let throttle speed up if appropriate
+      throttle.onSuccess();
 
       const res = await processGym(scraped, cityName, jobId, true);
 
@@ -140,8 +216,8 @@ async function processUrlsWithPool(browser, urls, jobId, cityName, stats, bullJo
         });
       }
 
-      // Inter-URL delay (shorter than before — Phase 1d)
-      await sleep(DELAY_MIN, DELAY_MAX);
+      // Adaptive inter-URL delay
+      await throttle.wait();
     }
   }
 
@@ -151,6 +227,7 @@ async function processUrlsWithPool(browser, urls, jobId, cityName, stats, bullJo
   // Close all pages
   await Promise.all(pages.map(async (page) => { try { await page.close(); } catch (_) {} }));
 
+  logger.info(`  📊 Batch complete — throttle final: ${throttle.status}`);
   return stopReason;
 }
 
@@ -485,9 +562,9 @@ async function start() {
   }, {
     connection,
     concurrency: CONCURRENCY,
-    // A batch of 15 URLs × reviews + photos can take 20-30 min.
+    // A batch of 10 URLs with reviews + photos + safe delays can take 30-45 min.
     // lockDuration must exceed worst-case runtime to prevent stall→failed.
-    lockDuration:    1_800_000,  // 30 min lock
+    lockDuration:    2_700_000,  // 45 min lock
     lockRenewTime:     300_000,  // renew every 5 min (keepalive) — must be < lockDuration/2
   });
 

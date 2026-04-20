@@ -43,9 +43,44 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
 ];
 
-function getRandomUA() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
+// ── Viewport rotation pool ───────────────────────────────────────────────────
+// Realistic desktop resolutions — makes each session look like a different device
+const VIEWPORTS = [
+  { width: 1280, height: 900 },
+  { width: 1366, height: 768 },
+  { width: 1440, height: 900 },
+  { width: 1536, height: 864 },
+  { width: 1920, height: 1080 },
+  { width: 1280, height: 720 },
+  { width: 1600, height: 900 },
+];
+
+// ── Timezone rotation pool ───────────────────────────────────────────────────
+const TIMEZONES = [
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Berlin',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Australia/Sydney',
+];
+
+// ── Accept-Language rotation ─────────────────────────────────────────────────
+const ACCEPT_LANGS = [
+  'en-US,en;q=0.9',
+  'en-US,en;q=0.9,es;q=0.8',
+  'en-GB,en;q=0.9,en-US;q=0.8',
+  'en-US,en;q=0.9,de;q=0.7',
+  'en-US,en;q=0.9,fr;q=0.8',
+  'en,en-US;q=0.9',
+];
+
+function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function getRandomUA() { return pickRandom(USER_AGENTS); }
 
 function sleep(min, max) {
   return new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
@@ -71,13 +106,20 @@ class BrowserManager {
       ],
     });
 
+    // Randomize fingerprint per session — each batch looks like a different user
+    const viewport = pickRandom(VIEWPORTS);
+    const tz       = pickRandom(TIMEZONES);
+    const lang     = pickRandom(ACCEPT_LANGS);
+
     this.ctx = await this.browser.newContext({
       userAgent:   getRandomUA(),
       locale:      'en-US',
-      timezoneId:  'America/New_York',
-      viewport:    { width: 1280, height: 900 },
-      extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
+      timezoneId:  tz,
+      viewport,
+      extraHTTPHeaders: { 'Accept-Language': lang },
     });
+
+    logger.info(`  🎭 Browser fingerprint: ${viewport.width}×${viewport.height}, tz:${tz}`);
 
     // ── Phase 1a: Aggressive resource blocking ────────────────────────────────
     // Block images, stylesheets, fonts, media — we only need DOM text content.
@@ -103,6 +145,30 @@ class BrowserManager {
   }
 }
 
+// ── Google block / CAPTCHA detection ─────────────────────────────────────────
+// Returns true if Google served a CAPTCHA, consent wall, or unusual-traffic page
+// instead of actual Maps content. The worker should back off when this triggers.
+
+async function isBlocked(page) {
+  try {
+    const blocked = await page.evaluate(() => {
+      const body = document.body?.innerText || '';
+      // CAPTCHA / unusual traffic page
+      if (/unusual traffic|captcha|are you a robot|automated queries/i.test(body)) return 'captcha';
+      // Google consent wall that won't dismiss
+      if (/before you continue|consent\.google/i.test(window.location.href)) return 'consent';
+      // Completely empty page (blocked silently)
+      if (document.querySelectorAll('a[href*="/maps/place/"]').length === 0 &&
+          !document.querySelector('h1') &&
+          body.length < 200) return 'empty';
+      return false;
+    });
+    return blocked;
+  } catch (_) {
+    return false;
+  }
+}
+
 // ── Search: collect all place URLs for a query ───────────────────────────────
 
 async function searchGymsInCity(page, cityName, category) {
@@ -119,8 +185,17 @@ async function searchGymsInCity(page, cityName, category) {
     await page.goto(url, { waitUntil: 'commit', timeout: cfg.scraper.timeout });
   }
 
-  // Phase 1b: Reduced from sleep(2000, 3000)
-  await sleep(1000, 1500);
+  // Optimized delay — enough for Google to render results
+  await sleep(2000, 3000);
+
+  // Check for Google block/CAPTCHA immediately
+  const blockReason = await isBlocked(page);
+  if (blockReason) {
+    logger.warn(`  🚫 Google blocked search for "${query}" (reason: ${blockReason}) — backing off`);
+    // Long backoff to let rate limit cool down
+    await sleep(15000, 30000);
+    return [];
+  }
 
   // Dismiss cookie banner if present
   for (const sel of ['button:has-text("Accept all")', 'button:has-text("Agree")', 'button[aria-label="Accept all"]']) {
@@ -128,8 +203,7 @@ async function searchGymsInCity(page, cityName, category) {
       const btn = page.locator(sel).first();
       if (await btn.isVisible({ timeout: 1500 })) {
         await btn.click();
-        // Phase 1b: Reduced from sleep(800, 1200)
-        await sleep(300, 500);
+        await sleep(600, 1000);
         break;
       }
     } catch (_) {}
@@ -160,8 +234,8 @@ async function searchGymsInCity(page, cityName, category) {
     } catch (_) {
       await page.mouse.wheel(0, 1200);
     }
-    // Phase 1b: Reduced from sleep(1200, 2200)
-    await sleep(600, 1000);
+    // Optimized scroll delay
+    await sleep(1200, 2000);
 
     if (gymUrls.size === lastSize) { if (++noNewFor >= 5) break; }
     else noNewFor = 0;
@@ -189,10 +263,18 @@ async function scrapeGymDetail(page, url, mode = 'standard') {
       // Fallback: 'commit' fires as soon as any response is received — catches slow pages
       await page.goto(url, { waitUntil: 'commit', timeout: cfg.scraper.timeout });
     }
-    // Phase 1b: Reduced from sleep(1800, 2800)
-    await sleep(800, 1200);
+    // Optimized page load delay
+    await sleep(1800, 2800);
   } catch (err) {
     throw new Error(`Navigation failed: ${err.message}`);
+  }
+
+  // Check for Google block/CAPTCHA on detail page
+  const blockReason = await isBlocked(page);
+  if (blockReason) {
+    logger.warn(`  🚫 Google blocked detail page (reason: ${blockReason}) — backing off`);
+    await sleep(15000, 30000);
+    throw new Error(`Google blocked: ${blockReason}`);
   }
 
   // ── Core data from DOM ───────────────────────────────────────────────────
@@ -331,8 +413,7 @@ async function scrapeAboutTab(page) {
     const tab = page.locator('button[aria-label*="About" i], button:has-text("About")').first();
     if (!await tab.isVisible({ timeout: 1500 }).catch(() => false)) return null;
     await tab.click();
-    // Phase 1b: Reduced from sleep(1000, 1500)
-    await sleep(500, 800);
+    await sleep(800, 1400);
 
     return await page.evaluate(() => {
       const items = [...document.querySelectorAll('.hpLkke, .E0DTEd li, .kx8XBd, .iP2t7d')];
@@ -357,8 +438,7 @@ async function scrapeReviews(page, maxReviews = 30) {
     const tab = page.locator('button[aria-label*="reviews" i], button:has-text("Reviews")').first();
     if (!await tab.isVisible({ timeout: 2000 }).catch(() => false)) return { reviews, reviewSummary };
     await tab.click();
-    // Phase 1b: Reduced from sleep(1500, 2200)
-    await sleep(800, 1200);
+    await sleep(1200, 2000);
 
     // Extract AI Review Summary or keywords
     try {
@@ -374,10 +454,9 @@ async function scrapeReviews(page, maxReviews = 30) {
       const sortBtn = page.locator('button[aria-label*="Sort" i]').first();
       if (await sortBtn.isVisible({ timeout: 1500 })) {
         await sortBtn.click();
-        await sleep(300, 500);
+        await sleep(400, 700);
         await page.locator('li[data-index="1"], li:has-text("Newest")').first().click({ timeout: 1500 });
-        // Phase 1b: Reduced from sleep(1000, 1500)
-        await sleep(600, 900);
+        await sleep(800, 1400);
       }
     } catch (_) {}
 
@@ -422,8 +501,7 @@ async function scrapeReviews(page, maxReviews = 30) {
 
       try { await panel.evaluate(el => el.scrollBy(0, 1800)); }
       catch (_) { await page.mouse.wheel(0, 1800); }
-      // Phase 1b: Reduced from sleep(1200, 2000)
-      await sleep(500, 900);
+      await sleep(1000, 1800);
     }
   } catch (err) {
     logger.warn(`Review scraping partial: ${err.message}`);
@@ -443,8 +521,7 @@ async function scrapePhotosTab(page, existing = [], maxPhotos = 20) {
     const tab = page.locator('button[aria-label*="Photos" i], button:has-text("Photos")').first();
     if (!await tab.isVisible({ timeout: 2000 }).catch(() => false)) return [...urls];
     await tab.click();
-    // Phase 1b: Reduced from sleep(1500, 2200)
-    await sleep(700, 1100);
+    await sleep(1200, 2000);
 
     let last = 0; let noNew = 0;
     while (urls.size < maxPhotos) {
@@ -459,8 +536,7 @@ async function scrapePhotosTab(page, existing = [], maxPhotos = 20) {
       else noNew = 0;
       last = urls.size;
       await page.mouse.wheel(0, 1500);
-      // Phase 1b: Reduced from sleep(900, 1600)
-      await sleep(400, 800);
+      await sleep(800, 1500);
     }
   } catch (err) {
     logger.warn(`Photo tab scraping partial: ${err.message}`);
@@ -468,4 +544,4 @@ async function scrapePhotosTab(page, existing = [], maxPhotos = 20) {
   return [...urls];
 }
 
-module.exports = { BrowserManager, searchGymsInCity, scrapeGymDetail, FITNESS_CATEGORIES };
+module.exports = { BrowserManager, searchGymsInCity, scrapeGymDetail, FITNESS_CATEGORIES, isBlocked };
