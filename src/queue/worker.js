@@ -485,14 +485,17 @@ async function start() {
   }, {
     connection,
     concurrency: CONCURRENCY,
-    lockDuration: 600_000,  // 10 min — batches are small, don't hold locks for 1h
+    // A batch of 15 URLs × reviews + photos can take 20-30 min.
+    // lockDuration must exceed worst-case runtime to prevent stall→failed.
+    lockDuration:    1_800_000,  // 30 min lock
+    lockRenewTime:     300_000,  // renew every 5 min (keepalive) — must be < lockDuration/2
   });
 
   worker.on('completed', (job) => logger.info(`✅ Job completed: ${job.id}`));
   worker.on('failed',    (job, err) => logger.error(`❌ Job failed: ${job?.id} — ${err.message}`));
   worker.on('error',     (err) => logger.error(`Worker error: ${err.message}`));
 
-  logger.info(`\n🚀 Atlas06 Worker started  [concurrency: ${CONCURRENCY}, pagePool: ${PAGE_POOL}, lockDuration: 3600s]`);
+  logger.info(`\n🚀 Atlas06 Worker started  [concurrency: ${CONCURRENCY}, pagePool: ${PAGE_POOL}, lockDuration: 1800s, lockRenewTime: 300s]`);
 
   // ── Graceful shutdown ────────────────────────────────────────────────────
   const shutdown = async (signal) => {

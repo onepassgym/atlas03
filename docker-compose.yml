@@ -47,14 +47,15 @@ services:
       redis: { condition: service_healthy }
     networks: [ opg ]
     command: node src/queue/worker.js
-    # Phase 9: 3 worker replicas — each picks up batch-scrape jobs independently
-    # Each worker can run CONCURRENCY=3 batch jobs × PAGE_POOL=6 tabs
-    # Budget: 3 replicas × 2 GB = 6 GB for scraping
+    # Phase 9: 2 worker replicas (was 3)
+    # Each worker: CONCURRENCY=2 batches × PAGE_POOL=3 tabs = 6 Chromium tabs
+    # Memory budget: 6 tabs × ~200MB + Node overhead ≈ 1.6-2.0 GB per replica
+    # 2 replicas × 2.5GB = 5GB total — safe on 8GB VPS
     deploy:
-      replicas: 3
+      replicas: 2
       resources:
         limits:
-          memory: 2G
+          memory: 2.5G
 
   # Phase 5: Dedicated media download + resize worker (no Chromium)
   media-worker:

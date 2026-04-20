@@ -4,7 +4,7 @@ const { body, param, query, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const router   = express.Router();
 
-const { addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus, clearCrawlQueue, requestCancelJob, removeBullJob } = require('../queue/queues');
+const { addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus, clearCrawlQueue, requestCancelJob, removeBullJob, promoteJobToFront } = require('../queue/queues');
 const { FITNESS_CATEGORIES } = require('../scraper/googleMapsScraper');
 const CrawlJob = require('../db/crawlJobModel');
 const Gym      = require('../db/gymModel');
@@ -332,6 +332,67 @@ router.post('/cancel/:jobId', async (req, res) => {
     await CrawlJob.findOneAndUpdate({ jobId }, { status: 'cancelled', completedAt: new Date() });
     ok(res, { message: 'Job marked as cancelled', jobId, status: 'cancelled' });
 
+  } catch (e) { err(res, e.message); }
+});
+
+/**
+ * @swagger
+ * /api/crawl/start-now/{jobId}:
+ *   post:
+ *     summary: Immediately promote a queued job to the front of the queue
+ *     description: Changes the BullMQ job priority to 0 (highest) so it runs next, ahead of all other waiting jobs.
+ *     tags: [Crawl]
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Job promoted to front
+ *       400:
+ *         description: Job is already running or not in a promotable state
+ *       404:
+ *         description: Job not found
+ */
+// POST /api/crawl/start-now/:jobId — promote a queued job to run immediately
+router.post('/start-now/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const dbJob = await CrawlJob.findOne({ jobId }).lean();
+    if (!dbJob) return err(res, 'Job not found', 404);
+
+    if (dbJob.status !== 'queued') {
+      return ok(res, {
+        message: `Job cannot be promoted — current status is "${dbJob.status}". Only queued jobs can be started immediately.`,
+        jobId,
+        status: dbJob.status,
+      }, 400);
+    }
+
+    const result = await promoteJobToFront(jobId);
+
+    if (result === 'not_found') {
+      // BullMQ job missing but DB says queued — edge case, job may have already been picked up
+      return ok(res, {
+        message: 'Job not found in the BullMQ queue — it may have already been picked up by a worker.',
+        jobId,
+        status: dbJob.status,
+      }, 400);
+    }
+
+    if (result === 'already_active') {
+      return ok(res, { message: 'Job is already being processed by a worker.', jobId, status: 'running' });
+    }
+
+    bus.publish('job:promoted', { jobId, type: dbJob.type, cityName: dbJob.input?.cityName, gymName: dbJob.input?.gymName });
+    logger.info(`⚡ Job ${jobId} promoted to front via API`);
+    return ok(res, {
+      message: `Job promoted to front of queue — it will start on the next available worker.`,
+      jobId,
+      promoted: true,
+    });
   } catch (e) { err(res, e.message); }
 });
 

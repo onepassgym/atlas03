@@ -202,6 +202,29 @@ async function removeBullJob(jobId) {
   } catch (_) { return false; }
 }
 
+/**
+ * Promote a queued/waiting job to run immediately by setting its priority to 0
+ * (BullMQ priority 0 = highest, runs before all other waiting jobs).
+ * Returns: 'promoted' | 'already_active' | 'not_found'
+ */
+async function promoteJobToFront(jobId) {
+  try {
+    const job = await crawlQueue.getJob(jobId);
+    if (!job) return 'not_found';
+    const state = await job.getState();
+    if (state === 'active') return 'already_active';
+    if (state === 'waiting' || state === 'waiting-children' || state === 'delayed' || state === 'prioritized') {
+      await job.changePriority({ priority: 0, lifo: false });
+      logger.info(`⚡ Promoted job ${jobId} to front of queue`);
+      return 'promoted';
+    }
+    return 'not_found';
+  } catch (e) {
+    logger.error(`Failed to promote job ${jobId}: ${e.message}`);
+    throw e;
+  }
+}
+
 module.exports = {
   crawlQueue,
   chainCrawlQueue,
@@ -221,4 +244,5 @@ module.exports = {
   isJobCancelled,
   clearCancelFlag,
   removeBullJob,
+  promoteJobToFront,
 };

@@ -183,7 +183,12 @@ async function scrapeGymDetail(page, url, mode = 'standard') {
   const maxPhotos  = mode === 'deep' ? 80  : (mode === 'fast' ? 0 : cfg.scraper.maxPhotos);
 
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: cfg.scraper.timeout });
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: cfg.scraper.timeout });
+    } catch (_) {
+      // Fallback: 'commit' fires as soon as any response is received — catches slow pages
+      await page.goto(url, { waitUntil: 'commit', timeout: cfg.scraper.timeout });
+    }
     // Phase 1b: Reduced from sleep(1800, 2800)
     await sleep(800, 1200);
   } catch (err) {

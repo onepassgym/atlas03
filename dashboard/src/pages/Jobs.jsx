@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, XCircle, Trash2 } from 'lucide-react';
+import { RefreshCw, XCircle, Trash2, Zap } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import Skeleton from '../components/Skeleton';
 import { api } from '../api/client';
@@ -23,6 +23,7 @@ export default function Jobs() {
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const [promoting, setPromoting] = useState(null); // jobId currently being promoted
 
   const fetchJobs = useCallback(async (p = page) => {
     setLoading(true);
@@ -79,6 +80,21 @@ export default function Jobs() {
       toast(res?.message || 'Cleared', 'info');
       setTimeout(() => fetchJobs(1), 500);
     } catch { toast('Failed', 'error'); }
+  };
+
+  const startNow = async (jobId) => {
+    if (!confirm('⚡ Promote this job to run immediately (next available worker)?')) return;
+    setPromoting(jobId);
+    try {
+      const res = await api.post(`/api/crawl/start-now/${jobId}`);
+      if (res?.promoted) {
+        toast('Job promoted to front of queue!', 'success');
+      } else {
+        toast(res?.message || 'Action taken', 'info');
+      }
+      setTimeout(() => fetchJobs(page), 500);
+    } catch { toast('Failed to promote job', 'error'); }
+    finally { setPromoting(null); }
   };
 
   const totalPages = Math.ceil(total / LIMIT);
@@ -139,6 +155,17 @@ export default function Jobs() {
                   <td style={{ color: 'var(--danger)', fontFamily: 'var(--mono)' }}>{p.failed || 0}</td>
                   <td style={{ fontFamily: 'var(--mono)', color: 'var(--text-muted)' }}>{dur}</td>
                   <td>
+                    {j.status === 'queued' && (
+                      <button
+                        className="btn sm accent"
+                        onClick={() => startNow(j.jobId)}
+                        disabled={promoting === j.jobId}
+                        title="Start immediately (promote to front of queue)"
+                        style={{ marginRight: 4 }}
+                      >
+                        {promoting === j.jobId ? <RefreshCw size={12} className="spin" /> : <Zap size={12} />}
+                      </button>
+                    )}
                     {(j.status === 'running' || j.status === 'queued') && (
                       <button className="btn sm danger" onClick={() => cancelJob(j.jobId)} title="Cancel"><XCircle size={12} /></button>
                     )}
