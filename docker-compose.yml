@@ -32,7 +32,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: atlas06-worker
     restart: unless-stopped
     env_file: .env
     environment:
@@ -62,7 +61,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: atlas06-media-worker
     restart: unless-stopped
     env_file: .env
     environment:
