@@ -17,6 +17,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+      - /app/dashboard/dist
       - ./media:/app/media
       - ./logs:/app/logs
     depends_on:

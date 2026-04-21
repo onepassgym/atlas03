@@ -43,14 +43,26 @@ atlas06-scraper/
 - MongoDB 7 & Redis 7
 
 ### 2. Setup & Start
-```bash
-npm install
-npm run setup        # Installs Chromium dependencies
-docker-compose up -d # Recommended: starts Mongo, Redis, API, and Worker
-```
+
+**For Development (Live Reload & Local Changes):**
+1. Create a `.env` file and set `NODE_ENV=development`.
+2. Start the services:
+   ```bash
+   npm install
+   npm run setup        # Installs Chromium dependencies
+   docker-compose up -d --build
+   ```
+
+**For Production:**
+1. Ensure your `.env` contains `NODE_ENV=production`.
+2. Start the generalized built-in services:
+   ```bash
+   docker-compose up -d --build
+   ```
 
 ### 3. Access Dashboard
-- **Mission Control**: [http://localhost:8747/dashboard](http://localhost:8747/dashboard)
+- **Development Hot-Reload**: [http://localhost:5173](http://localhost:5173) (Vite server auto-proxies to API)
+- **Production Built-In**: [http://localhost:8747/dashboard](http://localhost:8747/dashboard) (Served directly by Express)
 - **Health Check**: `http://localhost:8747/health`
 
 ---
