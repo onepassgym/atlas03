@@ -117,7 +117,7 @@ async function resolveAmenities(rawLabels = []) {
 // ── Normalized Data Ingestion Helpers ────────────────────────────────────────
 
 async function upsertPhotos(gymId, rawPhotos = [], now) {
-  if (!rawPhotos.length) return;
+  if (!rawPhotos.length) return 0;
 
   // Phase 3b: Single bulkWrite instead of N sequential updateOne calls
   const ops = rawPhotos
@@ -145,7 +145,11 @@ async function upsertPhotos(gymId, rawPhotos = [], now) {
       }
     }));
 
-  if (ops.length) await Photo.bulkWrite(ops, { ordered: false });
+  if (ops.length) {
+    const res = await Photo.bulkWrite(ops, { ordered: false });
+    return res.upsertedCount || 0;
+  }
+  return 0;
 }
 
 async function upsertCrawlMeta(gymId, rawMeta, now) {
@@ -350,13 +354,14 @@ function diffTrackedFields(existing, incoming) {
 
 /**
  * @param {Object} crawledData  — the structured gym object from gymProcessor
- * @returns {{ action: string, gymId: ObjectId, newReviews: number, changedFields: string[] }}
+ * @returns {{ action: string, gymId: ObjectId, newReviews: number, newPhotos: number, changedFields: string[] }}
  */
 async function upsertGym(crawledData) {
   const result = {
     action: null,
     gymId: null,
     newReviews: 0,
+    newPhotos: 0,
     changedFields: [],
   };
 
@@ -405,11 +410,14 @@ async function upsertGym(crawledData) {
       const gymId = gym._id;
 
       // 2. Parallel ingestion of secondary scaled data
-      await Promise.all([
+      const [revCount, photoCount] = await Promise.all([
         insertReviews(gymId, crawledData.reviews),
         upsertPhotos(gymId, crawledData.photos, now),
         upsertCrawlMeta(gymId, crawledData.crawlMeta, now)
       ]);
+
+      result.newReviews = revCount || 0;
+      result.newPhotos = photoCount || 0;
 
       const newReviewCount = await Review.countDocuments({ gymId });
 
@@ -432,13 +440,13 @@ async function upsertGym(crawledData) {
     }
 
     // 2. Parallel ingestion of external records (Merging into secondary collections)
-    const reviewResult = await mergeReviews(gymId, crawledData.reviews);
-    result.newReviews = reviewResult;
-    
-    await Promise.all([
+    const [reviewResult, photoResult] = await Promise.all([
+      mergeReviews(gymId, crawledData.reviews),
       upsertPhotos(gymId, crawledData.photos, now),
       upsertCrawlMeta(gymId, crawledData.crawlMeta, now)
     ]);
+    result.newReviews = reviewResult;
+    result.newPhotos = photoResult;
 
     // Recount and update totalReviews on gym doc
     const currentTotalReviews = await Review.countDocuments({ gymId });
@@ -488,7 +496,7 @@ async function upsertGym(crawledData) {
     $set.updatedAt = now;
 
     // Determine if anything changed
-    const somethingChanged = diffs.length > 0 || reviewResult > 0;
+    const somethingChanged = diffs.length > 0 || reviewResult > 0 || photoResult > 0;
 
     await Gym.findByIdAndUpdate(gymId, { $set }, { new: false });
 

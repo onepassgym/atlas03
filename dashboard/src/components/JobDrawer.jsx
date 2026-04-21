@@ -56,7 +56,7 @@ export default function JobDrawer({ jobId, onClose }) {
   const p = job?.progress || {};
   const total = p.total || 0;
   const scraped = (p.scraped || 0) + (p.failed || 0) + (p.skipped || 0);
-  const pct = total > 0 ? Math.round((scraped / total) * 100) : 0;
+  const pct = total > 0 ? Math.min(100, Math.round((scraped / total) * 100)) : 0;
   const errors = job?.jobErrors || [];
   const name = job?.input?.cityName || job?.input?.gymName || job?.input?.chainName || 'Unknown';
 
@@ -93,9 +93,23 @@ export default function JobDrawer({ jobId, onClose }) {
             {/* Status + Progress */}
             <div className="drawer-section">
               <div className="drawer-section-title">Status</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                <span className={`badge-status ${job.status}`} style={{ fontSize: 12 }}>{job.status}</span>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDuration(job.durationMs)}</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span className={`badge-status ${job.status}`} style={{ fontSize: 12 }}>{job.status}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDuration(job.durationMs)}</span>
+                </div>
+                {job.status === 'running' && (
+                  <button 
+                    className="btn sm success" 
+                    onClick={async () => {
+                      if (!confirm('🏁 Force complete?')) return;
+                      await api.post(`/api/crawl/force-complete/${jobId}`);
+                      onClose();
+                    }}
+                  >
+                    <CheckCircle size={12} style={{ marginRight: 4 }} /> Force Complete
+                  </button>
+                )}
               </div>
               {total > 0 && (
                 <>

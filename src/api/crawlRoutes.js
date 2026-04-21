@@ -4,7 +4,11 @@ const { body, param, query, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const router   = express.Router();
 
-const { addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus, clearCrawlQueue, requestCancelJob, removeBullJob, promoteJobToFront } = require('../queue/queues');
+const { 
+  addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus, 
+  clearCrawlQueue, requestCancelJob, removeBullJob, promoteJobToFront,
+  removeJobAndBatches
+} = require('../queue/queues');
 const { FITNESS_CATEGORIES } = require('../scraper/googleMapsScraper');
 const CrawlJob = require('../db/crawlJobModel');
 const Gym      = require('../db/gymModel');
@@ -310,28 +314,40 @@ router.post('/cancel/:jobId', async (req, res) => {
       return ok(res, { message: `Job is already ${dbJob.status}`, jobId, status: dbJob.status });
     }
 
+    // Set Redis cancel flag — worker checks this every URL iteration
+    await requestCancelJob(jobId);
+
     if (dbJob.status === 'queued') {
-      // Remove from BullMQ queue if still waiting
-      const removed = await removeBullJob(jobId);
+      await removeJobAndBatches(jobId);
       await CrawlJob.findOneAndUpdate({ jobId }, { status: 'cancelled', completedAt: new Date() });
-      return ok(res, { message: `Queued job cancelled${removed ? ' and removed from queue' : ''}`, jobId, status: 'cancelled' });
+      return ok(res, { message: 'Queued job cancelled and removed', jobId, status: 'cancelled' });
     }
 
-    if (dbJob.status === 'running') {
-      // Set Redis cancel flag — worker checks this every URL iteration
-      await requestCancelJob(jobId);
-      return ok(res, {
-        message: 'Cancel signal sent to running job. It will stop after the current gym finishes processing.',
-        jobId,
-        status: 'cancelling',
-        note: 'Check /api/crawl/status/' + jobId + ' — status will change to "cancelled" shortly.',
-      });
-    }
-
-    // failed/partial — just mark as cancelled
     await CrawlJob.findOneAndUpdate({ jobId }, { status: 'cancelled', completedAt: new Date() });
-    ok(res, { message: 'Job marked as cancelled', jobId, status: 'cancelled' });
+    ok(res, { message: 'Job cancellation requested. Workers will stop shortly.', jobId, status: 'cancelled' });
 
+  } catch (e) { err(res, e.message); }
+});
+
+// POST /api/crawl/force-complete/:jobId — Instantly stop and mark as completed
+router.post('/force-complete/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const dbJob = await CrawlJob.findOne({ jobId }).lean();
+    if (!dbJob) return err(res, 'Job not found', 404);
+
+    // 1. Set status in DB
+    await CrawlJob.findOneAndUpdate({ jobId }, { status: 'completed', completedAt: new Date() });
+
+    // 2. Signal workers to stop
+    await requestCancelJob(jobId);
+
+    // 3. Clean up queue
+    await removeJobAndBatches(jobId);
+
+    bus.publish('job:completed', { jobId, cityName: dbJob.input?.cityName, status: 'completed', forced: true });
+    
+    ok(res, { message: 'Job force-completed and removed from queue. Progress is locked.', jobId, status: 'completed' });
   } catch (e) { err(res, e.message); }
 });
 

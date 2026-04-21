@@ -382,8 +382,13 @@ async function processCityJob(job) {
     // ── Phase 7: Pre-filter recently-crawled URLs ──────────────────────────
     const urlsToScrape = stopReason ? [] : await preFilterUrls([...allUrls], cityName);
     const total = urlsToScrape.length;
+    const skippedPreFilter = discoveredTotal - total;
 
-    await updateJob(jobId, { 'progress.total': discoveredTotal, 'progress.toScrape': total });
+    await updateJob(jobId, { 
+      'progress.total': discoveredTotal, 
+      'progress.toScrape': total,
+      $inc: { 'progress.skipped': skippedPreFilter }
+    });
 
     if (total === 0 || stopReason) {
       const durationMs = Date.now() - startTime;
@@ -469,13 +474,21 @@ async function processBatchJob(job) {
     // Check if ALL batches are done → mark parent job completed
     try {
       const parentJob = await CrawlJob.findOne({ jobId: parentJobId }).lean();
-      if (parentJob?.progress?.batchesDone >= parentJob?.progress?.batches) {
+      const p = parentJob?.progress || {};
+      const totalDone = (p.scraped || 0) + (p.failed || 0) + (p.skipped || 0);
+
+      if (p.batchesDone >= p.batches || (p.total > 0 && totalDone >= p.total)) {
         const totalDuration = parentJob.startedAt ? (Date.now() - new Date(parentJob.startedAt).getTime()) : durationMs;
+        
         await updateJob(parentJobId, {
           status: 'completed',
           completedAt: new Date(),
           durationMs: totalDuration,
         });
+
+        // Clear any remaining pending batches for this job
+        await removeJobAndBatches(parentJobId);
+
         bus.publish('job:completed', {
           jobId: parentJobId, cityName,
           status: 'completed',
@@ -495,10 +508,26 @@ async function processBatchJob(job) {
     logger.error(`  💥 [BATCH ${batchIndex}] FAILED: ${err.message}`);
 
     // Still increment batchesDone so parent doesn't hang forever
+    // Calculate how many were already incremented in stats to avoid double-counting
+    const alreadyProcessed = (stats.created || 0) + (stats.updated || 0) + (stats.skipped || 0) + (stats.failed || 0);
+    const remainingUrls = Math.max(0, urls.length - alreadyProcessed);
+
     await updateJob(parentJobId, {
-      $inc: { 'progress.batchesDone': 1, 'progress.failed': urls.length, errorCount: 1 },
+      $inc: { 
+        'progress.batchesDone': 1, 
+        'progress.failed': remainingUrls, 
+        errorCount: 1 
+      },
       $push: { jobErrors: { message: `Batch ${batchIndex} failed: ${err.message}`, at: new Date() } },
     });
+
+    // Final safeguard: check if this was the last batch (même logic as success)
+    const parentJob = await CrawlJob.findOne({ jobId: parentJobId }).lean();
+    const p = parentJob?.progress || {};
+    const totalDone = (p.scraped || 0) + (p.failed || 0) + (p.skipped || 0);
+    if (p.total > 0 && totalDone >= p.total && parentJob.status === 'running') {
+      await updateJob(parentJobId, { status: 'completed', completedAt: new Date() });
+    }
 
     throw err;
   }

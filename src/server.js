@@ -17,6 +17,7 @@ const indexRoutes     = require('./api/indexRoutes');
 const crawlRoutes     = require('./api/crawlRoutes');
 const gymRoutes       = require('./api/gymRoutes');
 const chainRoutes     = require('./api/chainRoutes');
+const enrichmentRoutes = require('./api/enrichmentRoutes');
 const systemRoutes    = require('./api/systemRoutes');
 const { startScheduler } = require('./services/schedulerService');
 const bus             = require('./services/eventBus');
@@ -66,6 +67,7 @@ app.use('/api/crawl',   crawlRoutes);
 app.use('/api/gyms',    gymRoutes);
 app.use('/api/chains',  chainRoutes);
 app.use('/api/system',  systemRoutes);
+app.use('/api/enrichment', enrichmentRoutes);
 app.use('/api/events',  require('./api/eventRoutes'));
 
 // ── Static files + Dashboard ──────────────────────────────────────────────────

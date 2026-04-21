@@ -13,15 +13,23 @@ services:
       - MONGODB_URI=mongodb://mongo:27017/atlas06
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - NODE_ENV=production
+      - NODE_ENV=${NODE_ENV:-production}
     volumes:
+      - .:/app
+      - /app/node_modules
       - ./media:/app/media
       - ./logs:/app/logs
     depends_on:
       mongo: { condition: service_healthy }
       redis: { condition: service_healthy }
     networks: [ opg ]
-    command: node src/server.js
+    # Detect NODE_ENV. If production, run standard node. If dev, run with --watch for hot-reloading.
+    command: >
+      sh -c "if [ \"$$NODE_ENV\" = \"production\" ]; then 
+               node src/server.js; 
+             else 
+               node --watch src/server.js; 
+             fi"
     deploy:
       resources:
         limits:
@@ -42,33 +50,61 @@ services:
       - MONGODB_URI=mongodb://mongo:27017/atlas06
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - NODE_ENV=production
+      - NODE_ENV=${NODE_ENV:-production}
     volumes:
+      - .:/app
+      - /app/node_modules
       - ./media:/app/media
       - ./logs:/app/logs
     depends_on:
       mongo: { condition: service_healthy }
       redis: { condition: service_healthy }
     networks: [ opg ]
-    command: node src/queue/worker.js
-    # 1 worker replica is safest for Google rate limits on a single IP
-    # CONCURRENCY=1 batch × PAGE_POOL=3 tabs = 3 Chromium tabs
-    # Memory: 1 browser (300MB) + 3 tabs (600MB) + Node (100MB) + buffer = ~1.2GB
-    #
-    # ── 8 GB VPS Memory Budget (keep 2 GB free = use max 6 GB) ──
-    # Worker: 2.0 GB   ← Chromium + Node
-    # Mongo:  2.0 GB   ← WiredTiger cache
-    # API:    768 MB   ← Express + SSE
-    # Media:  512 MB   ← Sharp image resizing
-    # Redis:  256 MB   ← BullMQ queues
-    # Total:  5.5 GB   (≤ 6 GB, leaves room for OS + Docker daemon)
+    command: >
+      sh -c "if [ \"$$NODE_ENV\" = \"production\" ]; then 
+               node src/queue/worker.js; 
+             else 
+               node --watch src/queue/worker.js; 
+             fi"
     deploy:
       replicas: 1
       resources:
         limits:
           memory: 2G
 
-  # Phase 5: Dedicated media download + resize worker (no Chromium)
+  enrichment-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/atlas06
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NODE_ENV=${NODE_ENV:-production}
+      - ENRICHMENT_DELAY=3000
+      - ENRICHMENT_BATCH_SIZE=10
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./media:/app/media
+      - ./logs:/app/logs
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [ opg ]
+    command: >
+      sh -c "if [ \"$$NODE_ENV\" = \"production\" ]; then 
+               node src/queue/enrichmentWorker.js; 
+             else 
+               node --watch src/queue/enrichmentWorker.js; 
+             fi"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
   media-worker:
     build:
       context: .
@@ -79,9 +115,11 @@ services:
       - MONGODB_URI=mongodb://mongo:27017/atlas06
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - NODE_ENV=production
+      - NODE_ENV=${NODE_ENV:-production}
       - MEDIA_WORKER_CONCURRENCY=8
     volumes:
+      - .:/app
+      - /app/node_modules
       - ./media:/app/media
       - ./logs:/app/logs
     depends_on:
@@ -102,7 +140,6 @@ services:
       - "27328:27017"
     volumes:
       - mongo_data:/data/db
-    # Cap WiredTiger cache to ~1 GB (inside 2 GB container limit)
     command: mongod --wiredTigerCacheSizeGB 1
     deploy:
       resources:
@@ -135,10 +172,24 @@ services:
       retries: 5
     networks: [ opg ]
 
+  dashboard:
+    image: node:20-slim
+    container_name: atlas06-dashboard
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./dashboard:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - VITE_API_URL=http://api:8747
+    command: sh -c "if [ \"$$NODE_ENV\" = \"production\" ]; then echo 'Dashboard built-in API'; else npm install && npm run dev -- --host; fi"
+    networks: [ opg ]
+
 volumes:
   mongo_data:
   redis_data:
-
 
 networks:
   opg:

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, XCircle, Trash2, Zap, AlertTriangle } from 'lucide-react';
+import { RefreshCw, XCircle, Trash2, Zap, AlertTriangle, CheckCircle } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import Skeleton from '../components/Skeleton';
 import JobDrawer from '../components/JobDrawer';
@@ -103,6 +103,16 @@ export default function Jobs() {
     } catch { toast('Failed', 'error'); }
   };
 
+  const forceComplete = async (jobId, e) => {
+    e?.stopPropagation();
+    if (!confirm('🏁 Force complete this job? Current progress will be saved as final.')) return;
+    try {
+      await api.post(`/api/crawl/force-complete/${jobId}`);
+      toast('Job force-completed', 'success');
+      setTimeout(() => fetchJobs(page), 500);
+    } catch { toast('Failed', 'error'); }
+  };
+
   const startNow = async (jobId, e) => {
     e?.stopPropagation();
     if (!confirm('⚡ Promote this job to run immediately?')) return;
@@ -160,7 +170,7 @@ export default function Jobs() {
             ) : jobs.map(j => {
               const p = j.progress || {};
               const total = p.total || 0;
-              const pct = total > 0 ? Math.round(((p.scraped || 0) + (p.failed || 0) + (p.skipped || 0)) / total * 100) : 0;
+              const pct = total > 0 ? Math.min(100, Math.round(((p.scraped || 0) + (p.failed || 0) + (p.skipped || 0)) / total * 100)) : 0;
               const name = j.input?.cityName || j.input?.gymName || j.input?.chainName || 'Unknown';
               const errorCount = j.errorCount || (j.jobErrors?.length) || 0;
               const hasBatches = p.batches > 0;
@@ -207,6 +217,16 @@ export default function Jobs() {
                         style={{ marginRight: 4 }}
                       >
                         {promoting === j.jobId ? <RefreshCw size={12} className="spin" /> : <Zap size={12} />}
+                      </button>
+                    )}
+                    {j.status === 'running' && (
+                      <button 
+                        className="btn sm success" 
+                        onClick={(e) => forceComplete(j.jobId, e)} 
+                        title="Force Complete"
+                        style={{ marginRight: 4 }}
+                      >
+                        <CheckCircle size={12} />
                       </button>
                     )}
                     {(j.status === 'running' || j.status === 'queued') && (

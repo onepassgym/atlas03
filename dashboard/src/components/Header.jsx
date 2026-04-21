@@ -1,6 +1,6 @@
 import { useApp } from '../context/AppContext';
 import { getBaseUrl } from '../api/client';
-import { Dumbbell, Sun, Moon } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 import styles from './Header.module.css';
 
 export default function Header() {
@@ -9,9 +9,9 @@ export default function Header() {
   return (
     <header className={styles.header} id="app-header">
       <div className={styles.headerLeft}>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span className={styles.logo}><Dumbbell size={20} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />Atlas06</span>
-          <span className={styles.logoSub}>Mission Control</span>
+        <div className={styles.logoContainer}>
+          <img src="./logo.svg" alt="Atlas Logo" className={styles.desktopLogo} />
+          <img src="./logo-old.svg" alt="Atlas Logo" className={styles.mobileLogo} />
         </div>
         {!isProdHost && (
           <div className={styles.envToggle}>

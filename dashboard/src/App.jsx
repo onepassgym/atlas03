@@ -13,6 +13,7 @@ const Chains    = lazy(() => import('./pages/Chains'));
 const Jobs      = lazy(() => import('./pages/Jobs'));
 const GlobePage = lazy(() => import('./pages/GlobePage'));
 const System    = lazy(() => import('./pages/System'));
+const Enrichment = lazy(() => import('./pages/Enrichment'));
 
 function PageLoader() {
   return (
@@ -38,6 +39,7 @@ function AppShell() {
           <Route path="/jobs"     element={<Jobs />} />
           <Route path="/globe"    element={<GlobePage />} />
           <Route path="/system"   element={<System />} />
+          <Route path="/enrichment" element={<Enrichment />} />
           <Route path="*"         element={<Navigate to="/overview" replace />} />
         </Routes>
       </Suspense>

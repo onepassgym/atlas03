@@ -1,11 +1,106 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Star, MapPin, Phone, Globe, Map, ExternalLink } from 'lucide-react';
+import {
+  X, Star, MapPin, Phone, Globe, Map, ExternalLink, Zap,
+  MessageSquare, Camera, Clock, Dumbbell, RefreshCw, Sparkles,
+  CheckCircle, XCircle, ChevronDown, ChevronUp,
+} from 'lucide-react';
 import { api } from '../api/client';
+import { useApp } from '../context/AppContext';
+
+const SECTIONS = [
+  { key: 'reviews',   label: 'Reviews',       icon: MessageSquare, color: '#f59e0b' },
+  { key: 'photos',    label: 'Photos',        icon: Camera,        color: '#8b5cf6' },
+  { key: 'contact',   label: 'Contact & Info', icon: Phone,        color: '#3b82f6' },
+  { key: 'hours',     label: 'Hours',         icon: Clock,         color: '#10b981' },
+  { key: 'amenities', label: 'Amenities',     icon: Dumbbell,      color: '#ec4899' },
+];
 
 export default function GymDrawer({ gymId, onClose }) {
+  const { toast } = useApp();
   const [gym, setGym] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [enriching, setEnriching] = useState(false);
+  const [selectedSections, setSelectedSections] = useState([]);
+  const [enrichLogs, setEnrichLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Toggle a section chip
+  const toggleSection = useCallback((key) => {
+    setSelectedSections(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  }, []);
+
+  // Full enrich (all sections)
+  const handleFullEnrich = async () => {
+    if (!gym?._id) return;
+    setEnriching(true);
+    try {
+      const res = await api.post('/api/enrichment/priority', { gymId: gym._id, sections: ['all'] });
+      if (res?.success) {
+        toast(`⚡ ${gym.name} → full enrichment queued`, 'info');
+        loadEnrichLogs();
+      } else {
+        toast(res?.error || 'Failed to enrich', 'error');
+      }
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      setEnriching(false);
+    }
+  };
+
+  // Deep enrich (150 reviews + 80 photos)
+  const handleDeepEnrich = async () => {
+    if (!gym?._id) return;
+    setEnriching(true);
+    try {
+      const res = await api.post('/api/enrichment/priority', { gymId: gym._id, sections: ['deep'] });
+      if (res?.success) {
+        toast(`🔬 ${gym.name} → deep enrichment queued (150 reviews + 80 photos)`, 'info');
+        loadEnrichLogs();
+      } else {
+        toast(res?.error || 'Failed to enrich', 'error');
+      }
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      setEnriching(false);
+    }
+  };
+
+  // Selective enrich (chosen sections only)
+  const handleSelectiveEnrich = async () => {
+    if (!gym?._id || selectedSections.length === 0) return;
+    setEnriching(true);
+    try {
+      const res = await api.post('/api/enrichment/priority', { gymId: gym._id, sections: selectedSections });
+      if (res?.success) {
+        toast(`⚡ ${gym.name} → enriching: ${selectedSections.join(', ')}`, 'info');
+        setSelectedSections([]);
+        loadEnrichLogs();
+      } else {
+        toast(res?.error || 'Failed to enrich', 'error');
+      }
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      setEnriching(false);
+    }
+  };
+
+  // Load enrichment history for this gym
+  const loadEnrichLogs = useCallback(async () => {
+    if (!gymId) return;
+    setLogsLoading(true);
+    try {
+      const res = await api.get(`/api/enrichment/logs/${gymId}?limit=5`);
+      if (res?.success) setEnrichLogs(res.logs || []);
+    } catch (_) {}
+    finally { setLogsLoading(false); }
+  }, [gymId]);
 
   useEffect(() => {
     if (!gymId) return;
@@ -14,9 +109,13 @@ export default function GymDrawer({ gymId, onClose }) {
       .then(res => { if (res?.success) setGym(res.gym); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [gymId]);
+    loadEnrichLogs();
+  }, [gymId, loadEnrichLogs]);
 
   if (!gymId) return null;
+
+  const enrichMeta = gym?.enrichmentMeta;
+  const hasGmapsUrl = !!gym?.googleMapsUrl;
 
   return (
     <AnimatePresence>
@@ -72,6 +171,161 @@ export default function GymDrawer({ gymId, onClose }) {
                 </div>
               )}
 
+              {/* ── Enrichment Panel ──────────────────────────────────────────── */}
+              <div className="enrich-panel" id="enrichment-panel">
+                <div className="enrich-panel-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Sparkles size={15} style={{ color: 'var(--accent)' }} />
+                    <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: 0.2 }}>Enrichment Engine</span>
+                  </div>
+                  {enrichMeta && enrichMeta.status !== 'never' && (
+                    <EnrichStatusBadge status={enrichMeta.status} lastSuccess={enrichMeta.lastSuccess} />
+                  )}
+                </div>
+
+                {/* Quick Actions */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <button
+                    className="btn accent enrich-btn"
+                    onClick={handleFullEnrich}
+                    disabled={enriching || !hasGmapsUrl}
+                    title={hasGmapsUrl ? 'Full re-scrape: core + reviews + photos + amenities' : 'No Google Maps URL'}
+                    id="btn-full-enrich"
+                  >
+                    <Zap size={13} />
+                    {enriching ? 'Queuing…' : 'Full Enrich'}
+                  </button>
+                  <button
+                    className="btn enrich-btn"
+                    onClick={handleDeepEnrich}
+                    disabled={enriching || !hasGmapsUrl}
+                    title="Deep mode: 150 reviews + 80 photos"
+                    style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--purple)', border: '1px solid rgba(139,92,246,0.25)' }}
+                    id="btn-deep-enrich"
+                  >
+                    <Sparkles size={13} />
+                    Deep Enrich
+                  </button>
+                </div>
+
+                {/* Section Chips */}
+                <div style={{ marginBottom: 10 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: 'var(--text-muted)', marginBottom: 6, display: 'block' }}>
+                    Or pick specific sections
+                  </span>
+                  <div className="enrich-chips">
+                    {SECTIONS.map(s => {
+                      const Icon = s.icon;
+                      const active = selectedSections.includes(s.key);
+                      return (
+                        <button
+                          key={s.key}
+                          className={`enrich-chip ${active ? 'active' : ''}`}
+                          onClick={() => toggleSection(s.key)}
+                          disabled={!hasGmapsUrl}
+                          style={{
+                            '--chip-color': s.color,
+                            borderColor: active ? s.color : undefined,
+                            background: active ? `${s.color}18` : undefined,
+                            color: active ? s.color : undefined,
+                          }}
+                          id={`chip-${s.key}`}
+                        >
+                          <Icon size={12} />
+                          {s.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Enrich Selected Button */}
+                <AnimatePresence>
+                  {selectedSections.length > 0 && (
+                    <motion.button
+                      className="btn accent enrich-btn"
+                      onClick={handleSelectiveEnrich}
+                      disabled={enriching}
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      style={{ width: '100%', justifyContent: 'center', marginBottom: 8 }}
+                      id="btn-selective-enrich"
+                    >
+                      <RefreshCw size={13} />
+                      Enrich {selectedSections.length} section{selectedSections.length > 1 ? 's' : ''}
+                    </motion.button>
+                  )}
+                </AnimatePresence>
+
+                {/* Last Updated */}
+                {gym.updatedAt && (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    Last updated: {new Date(gym.updatedAt).toLocaleDateString()} at {new Date(gym.updatedAt).toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
+
+              {/* ── Enrichment History ────────────────────────────────────────── */}
+              <div className="drawer-section" style={{ marginTop: 8 }}>
+                <button
+                  onClick={() => setShowHistory(!showHistory)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
+                    cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 700, fontSize: 12,
+                    padding: 0, width: '100%', justifyContent: 'space-between',
+                  }}
+                  id="btn-toggle-history"
+                >
+                  <span>Enrichment History ({enrichLogs.length})</span>
+                  {showHistory ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+                <AnimatePresence>
+                  {showHistory && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      style={{ overflow: 'hidden', marginTop: 8 }}
+                    >
+                      {logsLoading ? (
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading…</span>
+                      ) : enrichLogs.length === 0 ? (
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No enrichment history yet</span>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {enrichLogs.map((log, i) => (
+                            <div key={i} className="enrich-log-row">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {log.status === 'success' ? (
+                                  <CheckCircle size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+                                ) : (
+                                  <XCircle size={13} style={{ color: 'var(--danger)', flexShrink: 0 }} />
+                                )}
+                                <span style={{ fontSize: 11, fontWeight: 600 }}>
+                                  {log.status === 'success' ? 'Success' : 'Failed'}
+                                </span>
+                                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                  {new Date(log.startedAt).toLocaleDateString()} {new Date(log.startedAt).toLocaleTimeString()}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+                                {log.durationMs && <span>⏱ {(log.durationMs / 1000).toFixed(1)}s</span>}
+                                {log.reviewsAdded > 0 && <span>📝 +{log.reviewsAdded} reviews</span>}
+                                {log.photosAdded > 0 && <span>📸 +{log.photosAdded} photos</span>}
+                                {log.fieldsUpdated?.length > 0 && <span>🔄 {log.fieldsUpdated.length} fields</span>}
+                                {log.error && <span style={{ color: 'var(--danger)' }}>❌ {log.error.slice(0, 60)}</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* ── Contact & Location ────────────────────────────────────────── */}
               <div className="drawer-section">
                 <div className="drawer-section-title">Contact & Location</div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -90,6 +344,7 @@ export default function GymDrawer({ gymId, onClose }) {
                 </div>
               </div>
 
+              {/* ── Opening Hours ─────────────────────────────────────────────── */}
               <div className="drawer-section">
                 <div className="drawer-section-title">Opening Hours</div>
                 {(gym.openingHours || []).length > 0 ? gym.openingHours.map((h, i) => (
@@ -100,6 +355,7 @@ export default function GymDrawer({ gymId, onClose }) {
                 )) : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Not available</span>}
               </div>
 
+              {/* ── Amenities ────────────────────────────────────────────────── */}
               {(gym.amenityIds || []).length > 0 && (
                 <div className="drawer-section">
                   <div className="drawer-section-title">Amenities</div>
@@ -113,6 +369,7 @@ export default function GymDrawer({ gymId, onClose }) {
                 </div>
               )}
 
+              {/* ── Reviews ──────────────────────────────────────────────────── */}
               <div className="drawer-section">
                 <div className="drawer-section-title">Reviews</div>
                 {(gym.reviews || []).length > 0 ? gym.reviews.slice(0, 5).map((r, i) => (
@@ -134,5 +391,31 @@ export default function GymDrawer({ gymId, onClose }) {
         </div>
       </motion.div>
     </AnimatePresence>
+  );
+}
+
+/* ── Sub-components ──────────────────────────────────────────────────────────── */
+
+function EnrichStatusBadge({ status, lastSuccess }) {
+  const config = {
+    success: { bg: 'rgba(16,185,129,0.12)', color: '#10b981', label: '✓ Enriched' },
+    failed:  { bg: 'rgba(239,68,68,0.12)',   color: '#ef4444', label: '✗ Failed' },
+    never:   { bg: 'rgba(107,114,128,0.12)', color: '#6b7280', label: '— Never' },
+  };
+  const c = config[status] || config.never;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{
+        padding: '2px 8px', borderRadius: 12, fontSize: 10, fontWeight: 700,
+        background: c.bg, color: c.color, letterSpacing: 0.3,
+      }}>
+        {c.label}
+      </span>
+      {lastSuccess && (
+        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+          {new Date(lastSuccess).toLocaleDateString()}
+        </span>
+      )}
+    </div>
   );
 }

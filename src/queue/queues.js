@@ -186,19 +186,39 @@ async function clearCancelFlag(jobId) {
 }
 
 /**
+ * Remove a BullMQ job and all its possible batch children from the queue.
+ */
+async function removeJobAndBatches(jobId) {
+  try {
+    // 1. Remove the main job
+    const mainJob = await crawlQueue.getJob(jobId);
+    if (mainJob) await mainJob.remove().catch(() => {});
+
+    // 2. Remove batches (predictable IDs: jobId:batch:N)
+    // We try a reasonable range (up to 200 batches)
+    const batchRemovals = [];
+    for (let i = 0; i < 200; i++) {
+        batchRemovals.push(
+            crawlQueue.getJob(`${jobId}:batch:${i}`).then(j => j?.remove().catch(() => {}))
+        );
+    }
+    await Promise.all(batchRemovals);
+    return true;
+  } catch (e) {
+    logger.error(`Failed to remove job/batches for ${jobId}: ${e.message}`);
+    return false;
+  }
+}
+
+/**
  * Remove a BullMQ job if it's still waiting in the queue.
- * Returns true if removed, false if it was already active/done.
  */
 async function removeBullJob(jobId) {
   try {
     const job = await crawlQueue.getJob(jobId);
     if (!job) return false;
-    const state = await job.getState();
-    if (state === 'waiting' || state === 'delayed') {
-      await job.remove();
-      return true;
-    }
-    return false;
+    await job.remove();
+    return true;
   } catch (_) { return false; }
 }
 
@@ -244,5 +264,6 @@ module.exports = {
   isJobCancelled,
   clearCancelFlag,
   removeBullJob,
+  removeJobAndBatches,
   promoteJobToFront,
 };

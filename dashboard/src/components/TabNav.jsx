@@ -1,13 +1,14 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Search, Link2, ClipboardList, Settings, Globe2 } from 'lucide-react';
+import { LayoutDashboard, Search, Link2, ClipboardList, Settings, Globe2, Zap } from 'lucide-react';
 
 const tabs = [
-  { to: '/overview',  icon: LayoutDashboard, label: 'Overview' },
-  { to: '/explorer',  icon: Search,          label: 'Gym Explorer' },
-  { to: '/chains',    icon: Link2,           label: 'Chains', badgeId: 'chainCount' },
-  { to: '/jobs',      icon: ClipboardList,   label: 'Jobs' },
-  { to: '/globe',     icon: Globe2,          label: 'Globe' },
-  { to: '/system',    icon: Settings,        label: 'System' },
+  { to: '/overview',   icon: LayoutDashboard, label: 'Overview' },
+  { to: '/explorer',   icon: Search,          label: 'Gym Explorer' },
+  { to: '/enrichment', icon: Zap,             label: 'Enrichment' },
+  { to: '/chains',     icon: Link2,           label: 'Chains', badgeId: 'chainCount' },
+  { to: '/jobs',       icon: ClipboardList,   label: 'Jobs' },
+  { to: '/globe',      icon: Globe2,          label: 'Globe' },
+  { to: '/system',     icon: Settings,        label: 'System' },
 ];
 
 export default function TabNav({ badges = {} }) {

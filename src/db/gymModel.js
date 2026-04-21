@@ -98,6 +98,15 @@ const GymSchema = new mongoose.Schema({
   },
   totalPhotos: { type: Number, default: 0 },
 
+  // Enrichment Summary
+  enrichmentMeta: {
+    lastAttempt:       Date,
+    lastSuccess:       Date,
+    status:           { type: String, enum: ['success', 'failed', 'never'], default: 'never' },
+    consecutiveErrors: { type: Number, default: 0 },
+    error:             String,
+  },
+
   // Details
   description:    String,
   priceLevel:     String,

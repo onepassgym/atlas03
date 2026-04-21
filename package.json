@@ -10,6 +10,8 @@
     "dev:worker": "nodemon src/queue/worker.js",
     "worker:chain": "node src/queue/chainWorker.js",
     "dev:worker:chain": "nodemon src/queue/chainWorker.js",
+    "worker:enrich": "node src/queue/enrichmentWorker.js",
+    "dev:worker:enrich": "nodemon src/queue/enrichmentWorker.js",
     "queue:cities": "node scripts/queueCities.js",
     "retry:failed": "node scripts/retryFailed.js",
     "retry:incomplete": "node scripts/retryFailed.js --incomplete",
@@ -19,7 +21,8 @@
     "docs:snapshot": "node scripts/genArchSnapshot.js",
     "dashboard:dev": "cd dashboard && npm run dev",
     "dashboard:build": "cd dashboard && npm run build",
-    "dashboard:install": "cd dashboard && npm install"
+    "dashboard:install": "cd dashboard && npm install",
+    "dev:all": "concurrently -c \"cyan,magenta,yellow,green,blue\" \"npm run dev\" \"npm run dev:worker\" \"npm run dev:worker:enrich\" \"npm run dev:worker:chain\" \"npm run dashboard:dev\""
   },
   "dependencies": {
     "axios": "1.7.2",
@@ -49,6 +52,7 @@
     "winston-daily-rotate-file": "5.0.0"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "nodemon": "3.1.4"
   },
   "engines": {

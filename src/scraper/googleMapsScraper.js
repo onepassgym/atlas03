@@ -544,4 +544,104 @@ async function scrapePhotosTab(page, existing = [], maxPhotos = 20) {
   return [...urls];
 }
 
-module.exports = { BrowserManager, searchGymsInCity, scrapeGymDetail, FITNESS_CATEGORIES, isBlocked };
+// ── Selective Scraper — scrape only requested sections ────────────────────────
+// sections: array of ['reviews', 'photos', 'contact', 'hours', 'amenities', 'deep', 'all']
+
+async function scrapeSelective(page, url, sections = ['all']) {
+  const isAll = sections.includes('all');
+  const isDeep = sections.includes('deep');
+
+  // If 'all' or 'deep', delegate to existing scrapeGymDetail
+  if (isAll) return scrapeGymDetail(page, url, 'standard');
+  if (isDeep) return scrapeGymDetail(page, url, 'deep');
+
+  // Navigate to the page and get core data (always needed for context)
+  try {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: cfg.scraper.timeout });
+    } catch (_) {
+      await page.goto(url, { waitUntil: 'commit', timeout: cfg.scraper.timeout });
+    }
+    await sleep(1800, 2800);
+  } catch (err) {
+    throw new Error(`Navigation failed: ${err.message}`);
+  }
+
+  const blockReason = await isBlocked(page);
+  if (blockReason) {
+    await sleep(15000, 30000);
+    throw new Error(`Google blocked: ${blockReason}`);
+  }
+
+  // Always scrape core data (fast — no tab navigation)
+  const core = await page.evaluate(() => {
+    const t  = s => document.querySelector(s)?.textContent?.trim() || null;
+    const a  = (s, attr) => document.querySelector(s)?.getAttribute(attr) || null;
+    const name = t('h1.DUwDvf') || t('h1');
+    const ratingRaw = t('.F7nice span[aria-hidden="true"]') || t('.MW4etd');
+    const rating = ratingRaw ? parseFloat(ratingRaw) : null;
+    const revText = document.querySelector('.F7nice')?.getAttribute('aria-label') || '';
+    const revMatch = revText.match(/([\d,]+)\s*review/i);
+    const totalReviews = revMatch ? parseInt(revMatch[1].replace(/,/g, ''), 10) : 0;
+    const address = t('button[data-item-id="address"] .Io6YTe') || t('[data-tooltip="Copy address"] .Io6YTe');
+    const phone = t('button[data-item-id^="phone:tel"] .Io6YTe') || t('[data-tooltip="Copy phone number"] .Io6YTe');
+    const website = a('a[data-item-id="authority"]', 'href') || a('a[aria-label*="website" i]', 'href');
+    const category = t('.DkEaL') || t('button.DkEaL') || null;
+    const description = t('.PYvSYb') || null;
+    const hourRows = [...document.querySelectorAll('table.WgFkxc tr, .t39EBf tr')];
+    const openingHours = hourRows.map(row => {
+      const cells = row.querySelectorAll('td, th');
+      const day = cells[0]?.textContent?.trim();
+      const times = cells[1]?.textContent?.trim();
+      if (!day) return null;
+      return { day, open: (times?.split('–')[0] || '').trim() || null, close: (times?.split('–')[1] || '').trim() || null, isClosed: !times || /closed/i.test(times), isOpen24: /open 24/i.test(times) };
+    }).filter(Boolean);
+    const isOpenNow = (() => { const el = document.querySelector('.dpoVLd, [aria-label*="Open now" i]'); return el ? /open now/i.test(el.textContent) : null; })();
+    const amenities = [...document.querySelectorAll('[aria-label].iP2t7d, .E0DTEd [aria-label]')].map(el => el.getAttribute('aria-label')).filter(Boolean);
+    const photoUrls = [...new Set([...document.querySelectorAll('button[jsaction*="heroHeaderImage"] img, .RZ66Rb img, .Uf0tqf img')].map(img => img.src || img.dataset?.src).filter(src => src?.startsWith('http')).map(src => src.replace(/=w\d+-h\d+[^&]*/, '=w1600-h1200')))];
+    const urlMatch = window.location.href.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    return {
+      name, rating, totalReviews, address, phone, website, category, description,
+      openingHours, isOpenNow, amenities, photoUrls,
+      lat: urlMatch ? parseFloat(urlMatch[1]) : null,
+      lng: urlMatch ? parseFloat(urlMatch[2]) : null,
+      googleMapsUrl: window.location.href,
+    };
+  });
+
+  if (!core.name) throw new Error('Could not extract gym name — page may not have loaded correctly');
+
+  // Build result — start with core, selectively add sections
+  const result = { ...core, reviews: [], reviewSummary: null };
+
+  const wantReviews   = sections.includes('reviews');
+  const wantPhotos    = sections.includes('photos');
+  const wantAmenities = sections.includes('amenities');
+  // contact + hours are already in core data — no extra work needed
+
+  if (wantAmenities) {
+    const deep = await scrapeAboutTab(page);
+    if (deep) result.amenities = [...new Set([...(core.amenities || []), ...deep])];
+  }
+
+  if (wantReviews) {
+    const { reviews, reviewSummary } = await scrapeReviews(page, cfg.scraper.maxReviews);
+    result.reviews = reviews;
+    result.reviewSummary = reviewSummary;
+  }
+
+  if (wantPhotos) {
+    result.photoUrls = await scrapePhotosTab(page, core.photoUrls || [], cfg.scraper.maxPhotos);
+  }
+
+  // Track which sections were scraped (for logging)
+  result._scrapedSections = sections;
+
+  return result;
+}
+
+module.exports = {
+  BrowserManager, searchGymsInCity, scrapeGymDetail, scrapeSelective,
+  scrapeAboutTab, scrapeReviews, scrapePhotosTab,
+  FITNESS_CATEGORIES, isBlocked,
+};

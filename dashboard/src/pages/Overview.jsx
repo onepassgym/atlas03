@@ -5,6 +5,7 @@ import { Building2, MessageCircle, Camera, Zap, Target, Link2, Activity, Trendin
 import StatCard from '../components/StatCard';
 import EventFeed from '../components/EventFeed';
 import CrawlActivity from '../components/CrawlActivity';
+import EnrichmentPanel from '../components/EnrichmentPanel';
 import Skeleton from '../components/Skeleton';
 import GymRow from '../components/GymRow';
 import GymDrawer from '../components/GymDrawer';
@@ -93,6 +94,9 @@ export default function Overview() {
       {/* ── Live Crawler Activity ────── */}
       <CrawlActivity />
 
+      {/* ── Enrichment Engine ────── */}
+      <EnrichmentPanel />
+
       {/* ── Stat Cards ────── */}
       <div className="grid" style={{ marginTop: 14 }}>
         <StatCard title="Total Gyms" value={stats?.total} label="venues in database" icon={<Building2 size={18} />} color="blue" />
@@ -161,7 +165,7 @@ export default function Overview() {
               const p = j.progress || {};
               const total = p.total || 0;
               const scraped = (p.scraped || 0) + (p.failed || 0) + (p.skipped || 0);
-              const pct = total > 0 ? Math.round((scraped / total) * 100) : 0;
+              const pct = total > 0 ? Math.min(100, Math.round((scraped / total) * 100)) : 0;
               const name = j.input?.cityName || j.input?.gymName || j.input?.chainName || 'Unknown';
               const typeIcon = j.type === 'chain' ? '🔗' : j.type === 'gym_name' ? '🏋' : '🏙️';
               const errorCount = j.errorCount || (j.jobErrors?.length) || 0;
