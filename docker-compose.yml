@@ -1,7 +1,7 @@
 services:
 
   api:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile
     container_name: atlas06-api
@@ -22,6 +22,10 @@ services:
       redis: { condition: service_healthy }
     networks: [ opg ]
     command: node src/server.js
+    deploy:
+      resources:
+        limits:
+          memory: 768M
     healthcheck:
       test: [ "CMD", "node", "-e", "require('http').get('http://localhost:8747/health', r => process.exit(r.statusCode === 200 ? 0 : 1))" ]
       interval: 30s
@@ -50,6 +54,14 @@ services:
     # 1 worker replica is safest for Google rate limits on a single IP
     # CONCURRENCY=1 batch × PAGE_POOL=3 tabs = 3 Chromium tabs
     # Memory: 1 browser (300MB) + 3 tabs (600MB) + Node (100MB) + buffer = ~1.2GB
+    #
+    # ── 8 GB VPS Memory Budget (keep 2 GB free = use max 6 GB) ──
+    # Worker: 2.0 GB   ← Chromium + Node
+    # Mongo:  2.0 GB   ← WiredTiger cache
+    # API:    768 MB   ← Express + SSE
+    # Media:  512 MB   ← Sharp image resizing
+    # Redis:  256 MB   ← BullMQ queues
+    # Total:  5.5 GB   (≤ 6 GB, leaves room for OS + Docker daemon)
     deploy:
       replicas: 1
       resources:
@@ -90,6 +102,12 @@ services:
       - "27328:27017"
     volumes:
       - mongo_data:/data/db
+    # Cap WiredTiger cache to ~1 GB (inside 2 GB container limit)
+    command: mongod --wiredTigerCacheSizeGB 1
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     healthcheck:
       test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 10s
@@ -105,7 +123,11 @@ services:
       - "6847:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --save 60 1 --loglevel warning
+    command: redis-server --save 60 1 --loglevel warning --maxmemory 200mb --maxmemory-policy allkeys-lru
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s

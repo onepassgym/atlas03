@@ -50,3 +50,20 @@
   font-size: 10px; color: var(--text-muted); font-family: var(--mono);
   display: flex; align-items: center; gap: 5px;
 }
+
+/* ── Mobile Header ──────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .header {
+    flex-wrap: wrap; gap: 8px;
+    padding: 10px 14px;
+  }
+  .headerLeft { gap: 8px; }
+  .logo { font-size: 18px; }
+  .logoSub { font-size: 10px; padding: 1px 6px; }
+  .envToggle { margin-left: 0; }
+  .envBtn { padding: 3px 8px; font-size: 9px; }
+  .headerRight { gap: 8px; }
+  .envStatus { display: none; }
+  .connectionBadge { font-size: 11px; }
+  .connectionBadge span:last-child { display: none; }
+}

@@ -27,8 +27,8 @@ class AtlasEventBus extends EventEmitter {
   constructor() {
     super();
     this.setMaxListeners(50);
-    this._history = [];       // Ring buffer of last 200 events
-    this._maxHistory = 200;
+    this._history = [];       // Ring buffer of last 500 events
+    this._maxHistory = 500;
     this._sseClients = new Set();
   }
 

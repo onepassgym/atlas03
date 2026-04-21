@@ -34,6 +34,7 @@ export default function TabNav({ badges = {} }) {
           border-bottom: 1px solid var(--border);
           display: flex; gap: 0; padding: 0 24px;
           overflow-x: auto; scrollbar-width: none;
+          -webkit-overflow-scrolling: touch;
           transition: background 0.3s ease;
         }
         .tab-nav::-webkit-scrollbar { display: none; }
@@ -52,7 +53,12 @@ export default function TabNav({ badges = {} }) {
           font-family: var(--mono);
         }
         @media (max-width: 640px) {
-          .tab-btn { padding: 10px 14px; font-size: 12px; }
+          .tab-nav { padding: 0 8px; top: 40px; }
+          .tab-btn { padding: 10px 12px; font-size: 11px; gap: 4px; }
+          .tab-badge { font-size: 9px; padding: 0 4px; }
+        }
+        @media (max-width: 380px) {
+          .tab-btn { padding: 8px 8px; font-size: 10px; }
         }
       `}</style>
     </nav>

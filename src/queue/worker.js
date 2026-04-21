@@ -67,16 +67,22 @@ class AdaptiveThrottle {
     this.consecutiveFails = 0;
   }
 
-  onSuccess() {
+  onSuccess(jobId) {
+    const prevMultiplier = this.multiplier;
     this.consecutiveSuccess++;
     this.consecutiveFails = 0;
     // Speed up slightly after 5+ consecutive successes (min multiplier 0.8)
     if (this.consecutiveSuccess >= 5) {
       this.multiplier = Math.max(0.8, this.multiplier - 0.05);
     }
+    // Publish throttle change if multiplier shifted
+    if (prevMultiplier !== this.multiplier && jobId) {
+      bus.publish('crawl:throttle', { jobId, multiplier: this.multiplier, direction: 'faster', consecutiveSuccess: this.consecutiveSuccess });
+    }
   }
 
-  onFailure(isBlock = false) {
+  onFailure(isBlock = false, jobId = null) {
+    const prevMultiplier = this.multiplier;
     this.consecutiveFails++;
     this.consecutiveSuccess = 0;
     if (isBlock) {
@@ -85,6 +91,10 @@ class AdaptiveThrottle {
     } else {
       // Progressive slowdown: 1.5× → 2× → 3× → 4×
       this.multiplier = Math.min(4.0, 1.5 + (this.consecutiveFails * 0.5));
+    }
+    // Publish throttle change
+    if (jobId) {
+      bus.publish('crawl:throttle', { jobId, multiplier: this.multiplier, direction: 'slower', reason: isBlock ? 'google_block' : 'failure', consecutiveFails: this.consecutiveFails });
     }
   }
 
@@ -139,6 +149,7 @@ async function processUrlsWithPool(browser, urls, jobId, cityName, stats, bullJo
       if (idx >= total) break;
 
       const url = urls[idx];
+      const urlShort = url.split('/maps/place/')[1]?.split('/')[0] || url.slice(-50);
 
       // Check cancellation before each URL
       const stop = await shouldStop(jobId);
@@ -148,11 +159,16 @@ async function processUrlsWithPool(browser, urls, jobId, cityName, stats, bullJo
       if (idx > 0 && idx >= nextPauseAt) {
         const pauseMs = 5000 + Math.random() * 10000;
         logger.info(`  ☕ Human pause at URL ${idx}/${total}: ${(pauseMs/1000).toFixed(1)}s (throttle: ${throttle.status})`);
+        bus.publish('crawl:human-pause', { jobId, pauseMs: Math.round(pauseMs), urlIndex: idx, total });
         await sleep(pauseMs, pauseMs + 1000);
         nextPauseAt = idx + 5 + Math.floor(Math.random() * 4);
       }
 
       await bullJob.updateProgress(25 + Math.floor((idx / total) * 75));
+
+      // Publish gym-start event
+      bus.publish('crawl:gym-start', { jobId, url: urlShort, urlIndex: idx, total });
+      const gymStartTime = Date.now();
 
       let scraped = null;
       let lastError = null;
@@ -161,12 +177,16 @@ async function processUrlsWithPool(browser, urls, jobId, cityName, stats, bullJo
         try { scraped = await scrapeGymDetail(page, url, mode); break; }
         catch (err) {
           lastError = err;
+          const isBlock = err.message.includes('Google blocked');
           logger.warn(`  ⚠  Attempt ${attempt}/${MAX_RETRIES} [${url.slice(-40)}]: ${err.message}`);
+          bus.publish('crawl:gym-failed', { jobId, url: urlShort, error: err.message.slice(0, 120), attempt, maxRetries: MAX_RETRIES, isBlock });
 
           // If Google blocked us, add a MUCH longer backoff
-          if (err.message.includes('Google blocked')) {
+          if (isBlock) {
+            const cooldownMs = 30000 + Math.random() * 30000;
             logger.warn('  🛑 Google block detected — cooling down for 30-60s');
-            throttle.onFailure(true);
+            bus.publish('crawl:block', { jobId, reason: err.message.slice(0, 80), cooldownMs: Math.round(cooldownMs) });
+            throttle.onFailure(true, jobId);
             await sleep(30000, 60000);
           } else {
             await sleep(3000 * attempt, 5000 * attempt);
@@ -176,7 +196,7 @@ async function processUrlsWithPool(browser, urls, jobId, cityName, stats, bullJo
 
       if (!scraped?.name) {
         stats.failed++;
-        throttle.onFailure(false);
+        throttle.onFailure(false, jobId);
         await updateJob(jobId, {
           $inc: { 'progress.failed': 1, errorCount: 1 },
           $push: { jobErrors: { message: lastError?.message || 'Could not extract gym data', url, at: new Date() } },
@@ -193,7 +213,9 @@ async function processUrlsWithPool(browser, urls, jobId, cityName, stats, bullJo
       }
 
       // Success — let throttle speed up if appropriate
-      throttle.onSuccess();
+      throttle.onSuccess(jobId);
+      const gymDuration = Date.now() - gymStartTime;
+      bus.publish('crawl:gym-done', { jobId, gymName: scraped.name, url: urlShort, action: 'pending', duration: gymDuration });
 
       const res = await processGym(scraped, cityName, jobId, true);
 
@@ -258,12 +280,15 @@ async function searchAllCategories(browser, cityName, categories, jobId, bullJob
       const stop = await shouldStop(jobId);
       if (stop) { stopReason = stop; break; }
 
+      bus.publish('crawl:search-start', { jobId, cityName, category: cat, categoryIndex: ci, totalCategories: cats.length });
       try {
         const urls = await searchGymsInCity(page, cityName, cat);
         urls.forEach(u => allUrls.add(u));
+        bus.publish('crawl:search-done', { jobId, cityName, category: cat, urlsFound: urls.length, totalUnique: allUrls.size });
         await bullJob.updateProgress(Math.floor(((ci + 1) / categories.length) * 25));
       } catch (err) {
         logger.warn(`Category "${cat}" failed: ${err.message}`);
+        bus.publish('crawl:search-done', { jobId, cityName, category: cat, urlsFound: 0, error: err.message.slice(0, 80) });
       }
       await sleep(DELAY_MIN, DELAY_MAX);
     }
@@ -417,6 +442,7 @@ async function processBatchJob(job) {
 
   await connectDB();
   logger.info(`\n📦 [BATCH ${batchIndex}] ${cityName} — ${urls.length} URLs, pagePool:${PAGE_POOL}, mode:${mode}`);
+  bus.publish('crawl:batch-start', { jobId: parentJobId, cityName, batchIndex, urlCount: urls.length, pagePool: PAGE_POOL, mode });
 
   const browser = new BrowserManager();
   const stats   = { created: 0, updated: 0, skipped: 0, failed: 0 };
@@ -459,6 +485,7 @@ async function processBatchJob(job) {
       }
     } catch (_) {}
 
+    bus.publish('crawl:batch-done', { jobId: parentJobId, cityName, batchIndex, stats: { ...stats }, duration: durationMs, status: batchStatus });
     logger.info(`  ✅ [BATCH ${batchIndex}] Done: created:${stats.created} updated:${stats.updated} failed:${stats.failed} (${(durationMs/1000).toFixed(1)}s)`);
     return { batchIndex, stats, durationMs, status: batchStatus };
 

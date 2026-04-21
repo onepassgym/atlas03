@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { Building2, MessageCircle, Camera, Zap, Target, Link2 } from 'lucide-react';
+import { Building2, MessageCircle, Camera, Zap, Target, Link2, Activity, TrendingUp } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import EventFeed from '../components/EventFeed';
+import CrawlActivity from '../components/CrawlActivity';
 import Skeleton from '../components/Skeleton';
 import GymRow from '../components/GymRow';
 import GymDrawer from '../components/GymDrawer';
@@ -23,7 +24,7 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 export default function Overview() {
-  const { events, setChainsCache } = useApp();
+  const { events, setChainsCache, crawlActivity } = useApp();
   const [stats, setStats] = useState(null);
   const [queueStats, setQueueStats] = useState(null);
   const [chainStats, setChainStats] = useState({ count: 0, totalLocs: 0 });
@@ -76,16 +77,30 @@ export default function Overview() {
   const cityData = (stats?.topCities || []).slice(0, 8).map(c => ({ name: c._id || 'Unknown', count: c.count }));
   const catData = (stats?.byCategory || []).slice(0, 8).map(c => ({ name: c._id || 'Unknown', value: c.count }));
 
+  // Throttle health color
+  const throttleColor = crawlActivity.throttle <= 1.0 ? 'green' : crawlActivity.throttle <= 2.0 ? 'yellow' : 'red';
+  const throttleLabel = crawlActivity.throttle <= 0.85 ? 'Cruising' : crawlActivity.throttle <= 1.1 ? 'Normal' : crawlActivity.throttle <= 2.0 ? 'Caution' : 'Throttled';
+
+  // Count today's events
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const todayEvents = events.filter(e => new Date(e.timestamp) >= todayStart);
+  const todayCreated = todayEvents.filter(e => e.type === 'gym:created').length;
+  const todayUpdated = todayEvents.filter(e => e.type === 'gym:updated').length;
+  const todayFailed = todayEvents.filter(e => e.type === 'crawl:gym-failed').length;
+
   return (
     <motion.div className="container" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      {/* ── Live Crawler Activity ────── */}
+      <CrawlActivity />
+
       {/* ── Stat Cards ────── */}
-      <div className="grid">
+      <div className="grid" style={{ marginTop: 14 }}>
         <StatCard title="Total Gyms" value={stats?.total} label="venues in database" icon={<Building2 size={18} />} color="blue" />
         <StatCard title="Total Reviews" value={stats?.totalReviews} label="aggregated insights" icon={<MessageCircle size={18} />} color="purple" />
         <StatCard title="Total Photos" value={stats?.totalPhotos} label="venue images" icon={<Camera size={18} />} color="orange" />
         <StatCard title="Queue Status" value={queueStats?.active ?? 0} label={`${queueStats?.waiting || 0} waiting`} icon={<Zap size={18} />} color="cyan" />
-        <StatCard title="Avg Quality" value={stats?.averageQuality ? parseFloat(stats.averageQuality) : 0} label="quality score" icon={<Target size={18} />} color="green" />
-        <StatCard title="Chain Members" value={chainStats.totalLocs} label={`across ${chainStats.count} chains`} icon={<Link2 size={18} />} color="yellow" />
+        <StatCard title="Crawl Health" value={crawlActivity.throttle.toFixed(1)} label={throttleLabel} sublabel={crawlActivity.status} icon={<Activity size={18} />} color={throttleColor} />
+        <StatCard title="Today" value={todayCreated + todayUpdated} label={`✅${todayCreated} new · 🔄${todayUpdated} upd · ❌${todayFailed} fail`} icon={<TrendingUp size={18} />} color="green" />
       </div>
 
       {/* ── Charts ────── */}
@@ -149,21 +164,28 @@ export default function Overview() {
               const pct = total > 0 ? Math.round((scraped / total) * 100) : 0;
               const name = j.input?.cityName || j.input?.gymName || j.input?.chainName || 'Unknown';
               const typeIcon = j.type === 'chain' ? '🔗' : j.type === 'gym_name' ? '🏋' : '🏙️';
+              const errorCount = j.errorCount || (j.jobErrors?.length) || 0;
               return (
                 <div key={j.jobId} style={{ padding: '10px 0', borderBottom: '1px solid rgba(75,85,99,0.15)', display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 16 }}>{typeIcon}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: 600, fontSize: 13 }}>{name}</span>
-                      <span className={`badge-status ${j.status}`} style={{ fontSize: 10 }}>{j.status}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {errorCount > 0 && <span className="error-badge">{errorCount}</span>}
+                        <span className={`badge-status ${j.status}`} style={{ fontSize: 10 }}>{j.status}</span>
+                      </div>
                     </div>
                     {j.status === 'running' && (
                       <div className="progress-bar" style={{ marginTop: 6 }}>
                         <div className="progress-fill" style={{ width: `${pct}%` }} />
                       </div>
                     )}
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'var(--mono)' }}>
-                      Total:{total} New:{p.newGyms || 0} Fail:{p.failed || 0}
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'var(--mono)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <span>Total:{total}</span>
+                      <span style={{ color: 'var(--success)' }}>New:{p.newGyms || 0}</span>
+                      <span style={{ color: 'var(--danger)' }}>Fail:{p.failed || 0}</span>
+                      {p.batches > 0 && <span style={{ color: 'var(--accent)' }}>Batches:{p.batchesDone || 0}/{p.batches}</span>}
                     </div>
                   </div>
                 </div>

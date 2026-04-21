@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, XCircle, Trash2, Zap } from 'lucide-react';
+import { RefreshCw, XCircle, Trash2, Zap, AlertTriangle } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import Skeleton from '../components/Skeleton';
+import JobDrawer from '../components/JobDrawer';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 
@@ -16,6 +17,23 @@ const STATUS_FILTERS = [
   { value: 'cancelled', label: 'Cancelled', icon: '🛑' },
 ];
 
+function timeAgo(d) {
+  if (!d) return '—';
+  const diff = Date.now() - new Date(d).getTime();
+  if (diff < 0) return 'just now';
+  if (diff < 60000) return `${Math.round(diff / 1000)}s ago`;
+  if (diff < 3600000) return `${Math.round(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ${Math.round((diff % 3600000) / 60000)}m ago`;
+  return `${Math.round(diff / 86400000)}d ago`;
+}
+
+function fmtDuration(ms) {
+  if (!ms) return '—';
+  if (ms < 60000) return `${(ms / 1000).toFixed(0)}s`;
+  if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+  return `${Math.floor(ms / 3600000)}h ${Math.round((ms % 3600000) / 60000)}m`;
+}
+
 export default function Jobs() {
   const { toast, events } = useApp();
   const [jobs, setJobs] = useState([]);
@@ -23,7 +41,8 @@ export default function Jobs() {
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
-  const [promoting, setPromoting] = useState(null); // jobId currently being promoted
+  const [promoting, setPromoting] = useState(null);
+  const [selectedJobId, setSelectedJobId] = useState(null);
 
   const fetchJobs = useCallback(async (p = page) => {
     setLoading(true);
@@ -48,7 +67,8 @@ export default function Jobs() {
     }
   }, [events]);
 
-  const cancelJob = async (jobId) => {
+  const cancelJob = async (jobId, e) => {
+    e?.stopPropagation();
     if (!confirm('Cancel this job?')) return;
     try {
       await api.post(`/api/crawl/cancel/${jobId}`);
@@ -57,7 +77,8 @@ export default function Jobs() {
     } catch { toast('Failed', 'error'); }
   };
 
-  const deleteJob = async (jobId) => {
+  const deleteJob = async (jobId, e) => {
+    e?.stopPropagation();
     try {
       await api.delete(`/api/crawl/jobs/${jobId}`);
       toast('Job deleted', 'info');
@@ -82,8 +103,9 @@ export default function Jobs() {
     } catch { toast('Failed', 'error'); }
   };
 
-  const startNow = async (jobId) => {
-    if (!confirm('⚡ Promote this job to run immediately (next available worker)?')) return;
+  const startNow = async (jobId, e) => {
+    e?.stopPropagation();
+    if (!confirm('⚡ Promote this job to run immediately?')) return;
     setPromoting(jobId);
     try {
       const res = await api.post(`/api/crawl/start-now/${jobId}`);
@@ -104,7 +126,7 @@ export default function Jobs() {
       {/* ── Filter Bar ────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <span className="section-title" style={{ marginBottom: 0, flexShrink: 0 }}>Job History</span>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flex: '1 1 auto' }}>
           {STATUS_FILTERS.map(f => (
             <button
               key={f.value}
@@ -115,62 +137,83 @@ export default function Jobs() {
             </button>
           ))}
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          <button className="btn sm" onClick={retryFailed}><RefreshCw size={12} /> Retry Failed</button>
-          <button className="btn sm danger" onClick={clearQueue}><XCircle size={12} /> Clear Queue</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button className="btn sm" onClick={retryFailed}><RefreshCw size={12} /> Retry</button>
+          <button className="btn sm danger" onClick={clearQueue}><XCircle size={12} /> Clear</button>
         </div>
       </div>
 
       {/* ── Jobs Table ────── */}
-      <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+      <div className="card" style={{ padding: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table className="data-table" id="jobs-table">
           <thead>
             <tr>
               <th>Type</th><th>Name</th><th>Status</th><th>Progress</th>
-              <th>New</th><th>Updated</th><th>Failed</th><th>Duration</th><th>Actions</th>
+              <th className="col-hide-mobile">Batches</th><th>New</th><th className="col-hide-mobile">Updated</th><th>Failed</th><th className="col-hide-mobile">Errors</th><th className="col-hide-mobile">Duration</th><th className="col-hide-mobile">When</th><th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9}><Skeleton count={5} height={32} /></td></tr>
+              <tr><td colSpan={12}><Skeleton count={5} height={32} /></td></tr>
             ) : jobs.length === 0 ? (
-              <tr><td colSpan={9} className="empty-state">No jobs found</td></tr>
+              <tr><td colSpan={12} className="empty-state">No jobs found</td></tr>
             ) : jobs.map(j => {
               const p = j.progress || {};
               const total = p.total || 0;
               const pct = total > 0 ? Math.round(((p.scraped || 0) + (p.failed || 0) + (p.skipped || 0)) / total * 100) : 0;
               const name = j.input?.cityName || j.input?.gymName || j.input?.chainName || 'Unknown';
-              const dur = j.durationMs ? `${(j.durationMs / 1000).toFixed(0)}s` : '—';
+              const errorCount = j.errorCount || (j.jobErrors?.length) || 0;
+              const hasBatches = p.batches > 0;
               return (
-                <tr key={j.jobId}>
+                <tr
+                  key={j.jobId}
+                  onClick={() => setSelectedJobId(j.jobId)}
+                  style={{ cursor: 'pointer' }}
+                  className="job-row-clickable"
+                >
                   <td><span className={`badge-type ${j.type || 'city'}`}>{j.type || 'city'}</span></td>
-                  <td style={{ color: 'var(--text-primary)', fontWeight: 500, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</td>
+                  <td style={{ color: 'var(--text-primary)', fontWeight: 500, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</td>
                   <td><span className={`badge-status ${j.status}`}>{j.status}</span></td>
-                  <td style={{ minWidth: 120 }}>
+                  <td style={{ minWidth: 110 }}>
                     <div className="progress-bar"><div className="progress-fill" style={{ width: `${pct}%` }} /></div>
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>{pct}% ({total})</span>
                   </td>
+                  <td className="col-hide-mobile" style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>
+                    {hasBatches ? (
+                      <span style={{ color: (p.batchesDone || 0) >= p.batches ? 'var(--success)' : 'var(--accent)' }}>
+                        {p.batchesDone || 0}/{p.batches}
+                      </span>
+                    ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                  </td>
                   <td style={{ color: 'var(--success)', fontFamily: 'var(--mono)' }}>{p.newGyms || 0}</td>
-                  <td style={{ color: 'var(--accent)', fontFamily: 'var(--mono)' }}>{p.updatedGyms || 0}</td>
+                  <td className="col-hide-mobile" style={{ color: 'var(--accent)', fontFamily: 'var(--mono)' }}>{p.updatedGyms || 0}</td>
                   <td style={{ color: 'var(--danger)', fontFamily: 'var(--mono)' }}>{p.failed || 0}</td>
-                  <td style={{ fontFamily: 'var(--mono)', color: 'var(--text-muted)' }}>{dur}</td>
-                  <td>
+                  <td className="col-hide-mobile">
+                    {errorCount > 0 ? (
+                      <span className="error-badge">{errorCount}</span>
+                    ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                  </td>
+                  <td className="col-hide-mobile" style={{ fontFamily: 'var(--mono)', color: 'var(--text-muted)', fontSize: 12 }}>{fmtDuration(j.durationMs)}</td>
+                  <td className="col-hide-mobile" style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                    {timeAgo(j.completedAt || j.startedAt || j.createdAt)}
+                  </td>
+                  <td onClick={e => e.stopPropagation()}>
                     {j.status === 'queued' && (
                       <button
                         className="btn sm accent"
-                        onClick={() => startNow(j.jobId)}
+                        onClick={(e) => startNow(j.jobId, e)}
                         disabled={promoting === j.jobId}
-                        title="Start immediately (promote to front of queue)"
+                        title="Start immediately"
                         style={{ marginRight: 4 }}
                       >
                         {promoting === j.jobId ? <RefreshCw size={12} className="spin" /> : <Zap size={12} />}
                       </button>
                     )}
                     {(j.status === 'running' || j.status === 'queued') && (
-                      <button className="btn sm danger" onClick={() => cancelJob(j.jobId)} title="Cancel"><XCircle size={12} /></button>
+                      <button className="btn sm danger" onClick={(e) => cancelJob(j.jobId, e)} title="Cancel"><XCircle size={12} /></button>
                     )}
                     {(j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled') && (
-                      <button className="btn sm danger" onClick={() => deleteJob(j.jobId)} title="Delete"><Trash2 size={12} /></button>
+                      <button className="btn sm danger" onClick={(e) => deleteJob(j.jobId, e)} title="Delete"><Trash2 size={12} /></button>
                     )}
                   </td>
                 </tr>
@@ -180,6 +223,9 @@ export default function Jobs() {
         </table>
         <Pagination current={page} total={totalPages} onPage={p => fetchJobs(p)} />
       </div>
+
+      {/* Job Detail Drawer */}
+      {selectedJobId && <JobDrawer jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />}
     </motion.div>
   );
 }
