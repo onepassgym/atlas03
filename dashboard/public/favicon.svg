@@ -1,0 +1,132 @@
+
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Mathematical gradient based on golden ratio (φ = 1.618) -->
+    <linearGradient id="phi-gradient" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366f1" />
+      <stop offset="0.618" stop-color="#8b5cf6" />
+      <stop offset="1" stop-color="#a855f7" />
+    </linearGradient>
+    
+    <!-- Network pulse gradient -->
+    <radialGradient id="network-pulse" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.8" />
+      <stop offset="0.618" stop-color="#a78bfa" stop-opacity="0.4" />
+      <stop offset="1" stop-color="#6366f1" stop-opacity="0" />
+    </radialGradient>
+    
+    <!-- Web crawler path gradient -->
+    <radialGradient id="crawler-path" x1="0" y1="24" x2="48" y2="24" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.2" />
+      <stop offset="0.5" stop-color="#a78bfa" stop-opacity="0.6" />
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0.2" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Base container with rounded corners (r = 12 = φ² × 3) -->
+  <rect width="48" height="48" rx="12" fill="url(#phi-gradient)" />
+  
+  <!-- Mathematical Grid System - Based on Rule of Thirds -->
+  <!-- Vertical divisions at x = 16, 32 (48/3) -->
+  <!-- Horizontal divisions at y = 16, 32 (48/3) -->
+  <g id="grid-overlay" opacity="0.08">
+    <line x1="16" y1="0" x2="16" y2="48" stroke="white" stroke-width="0.5" />
+    <line x1="32" y1="0" x2="32" y2="48" stroke="white" stroke-width="0.5" />
+    <line x1="0" y1="16" x2="48" y2="16" stroke="white" stroke-width="0.5" />
+    <line x1="0" y1="32" x2="48" y2="32" stroke="white" stroke-width="0.5" />
+  </g>
+  
+  <!-- Network Graph Structure - Representing Web Crawling -->
+  <!-- Pentagon layout (5 nodes) - 360°/5 = 72° between each node -->
+  <!-- Center point: (24, 24), Radius: 14 (Fibonacci number) -->
+  
+  <!-- Node positions calculated using trigonometry:
+       Node 1 (top): (24, 10) - angle 270°
+       Node 2 (top-right): (37.3, 15.7) - angle 342°
+       Node 3 (bottom-right): (32.8, 30.3) - angle 54°
+       Node 4 (bottom-left): (15.2, 30.3) - angle 126°
+       Node 5 (top-left): (10.7, 15.7) - angle 198°
+  -->
+  
+  <!-- Connection paths (web structure) -->
+  <g id="network-web" stroke="white" stroke-opacity="0.2" stroke-width="1" fill="none">
+    <!-- Pentagon perimeter -->
+    <path d="M 24 10 L 37.3 15.7 L 32.8 30.3 L 15.2 30.3 L 10.7 15.7 Z" />
+    
+    <!-- Inner star connections (pentagram) -->
+    <path d="M 24 10 L 32.8 30.3 M 32.8 30.3 L 10.7 15.7 M 10.7 15.7 L 37.3 15.7 M 37.3 15.7 L 15.2 30.3 M 15.2 30.3 L 24 10" />
+    
+    <!-- Central hub connections -->
+    <line x1="24" y1="24" x2="24" y2="10" />
+    <line x1="24" y1="24" x2="37.3" y2="15.7" />
+    <line x1="24" y1="24" x2="32.8" y2="30.3" />
+    <line x1="24" y1="24" x2="15.2" y2="30.3" />
+    <line x1="24" y1="24" x2="10.7" y2="15.7" />
+  </g>
+  
+  <!-- Network nodes (data points) -->
+  <g id="network-nodes">
+    <!-- Outer nodes - radius 2.5 -->
+    <circle cx="24" cy="10" r="2.5" fill="white" opacity="0.9" />
+    <circle cx="37.3" cy="15.7" r="2.5" fill="white" opacity="0.9" />
+    <circle cx="32.8" cy="30.3" r="2.5" fill="white" opacity="0.9" />
+    <circle cx="15.2" cy="30.3" r="2.5" fill="white" opacity="0.9" />
+    <circle cx="10.7" cy="15.7" r="2.5" fill="white" opacity="0.9" />
+    
+    <!-- Node cores -->
+    <circle cx="24" cy="10" r="1" fill="#6366f1" />
+    <circle cx="37.3" cy="15.7" r="1" fill="#6366f1" />
+    <circle cx="32.8" cy="30.3" r="1" fill="#6366f1" />
+    <circle cx="15.2" cy="30.3" r="1" fill="#6366f1" />
+    <circle cx="10.7" cy="15.7" r="1" fill="#6366f1" />
+  </g>
+  
+  <!-- Central "A" - Mathematical Construction -->
+  <!-- Using isosceles triangle with golden ratio proportions -->
+  <!-- Base width: 10, Height: 16.18 (10 × φ) -->
+  <!-- Apex angle: ≈38.17° (based on golden ratio) -->
+  
+  <g id="atlas-a-symbol">
+    <!-- Triangle base at golden ratio height -->
+    <!-- Left edge: angle = 180° - 70.9° = 109.1° from horizontal -->
+    <!-- Right edge: angle = 70.9° from horizontal -->
+    <path d="M 24 18 L 19 34 L 29 34 Z" fill="white" opacity="0.15" />
+    
+    <!-- Crawling path indicator (directional arrow integrated into A) -->
+    <!-- Left stroke - 70.9° angle -->
+    <path d="M 24 18 L 20 32" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+    <!-- Right stroke - 109.1° angle -->
+    <path d="M 24 18 L 28 32" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.7" />
+    
+    <!-- Crossbar at φ ratio from bottom (0.618 × 14 = 8.65 from base) -->
+    <line x1="21.5" y1="25.35" x2="26.5" y2="25.35" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.9" />
+  </g>
+  
+  <!-- Central hub (crawler core) - Using Fibonacci radius (3) -->
+  <circle cx="24" cy="24" r="4.5" fill="url(#network-pulse)" />
+  <circle cx="24" cy="24" r="3" fill="#6366f1" />
+  <circle cx="24" cy="24" r="1.5" fill="white" />
+  
+  <!-- Fibonacci spiral indicator (subtle mathematical reference) -->
+  <!-- Quarter arcs representing golden spiral growth -->
+  <g id="fibonacci-spiral" stroke="white" stroke-width="0.5" stroke-opacity="0.15" fill="none">
+    <!-- Arc 1: radius 2 (Fibonacci) -->
+    <path d="M 26 24 A 2 2 0 0 1 24 26" />
+    <!-- Arc 2: radius 3 (Fibonacci) -->
+    <path d="M 24 26 A 3 3 0 0 1 21 24" />
+    <!-- Arc 3: radius 5 (Fibonacci) -->
+    <path d="M 21 24 A 5 5 0 0 1 24 19" />
+  </g>
+  
+  <!-- Scanning/Crawling animation reference circles -->
+  <!-- Three concentric rings representing crawler depth levels -->
+  <circle cx="24" cy="24" r="18" stroke="white" stroke-width="0.5" stroke-opacity="0.1" fill="none" stroke-dasharray="2 4" />
+  <circle cx="24" cy="24" r="21" stroke="white" stroke-width="0.5" stroke-opacity="0.08" fill="none" stroke-dasharray="3 5" />
+  
+  <!-- Border highlight (golden ratio corner radius) -->
+  <rect x="0.5" y="0.5" width="47" height="47" rx="11.5" stroke="white" stroke-opacity="0.2" stroke-width="1" fill="none" />
+  
+  <!-- Mathematical notation accent (optional tiny detail) -->
+  <!-- φ symbol hint at bottom right -->
+  <text x="40" y="44" font-family="serif" font-size="4" fill="white" opacity="0.15">φ</text>
+</svg>

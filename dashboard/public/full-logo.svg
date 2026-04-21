@@ -1,0 +1,159 @@
+
+<svg width="200" height="48" viewBox="0 0 200 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Mathematical gradient based on golden ratio (φ = 1.618) -->
+    <linearGradient id="combined-gradient" x1="0" y1="0" x2="200" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366f1" />
+      <stop offset="0.618" stop-color="#8b5cf6" />
+      <stop offset="1" stop-color="#a855f7" />
+    </linearGradient>
+    
+    <radialGradient id="network-pulse-combined" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.8" />
+      <stop offset="0.618" stop-color="#a78bfa" stop-opacity="0.4" />
+      <stop offset="1" stop-color="#6366f1" stop-opacity="0" />
+    </radialGradient>
+    
+    <linearGradient id="path-gradient-combined" x1="0" y1="24" x2="200" y2="24" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.2" />
+      <stop offset="0.5" stop-color="#a78bfa" stop-opacity="0.6" />
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0.2" />
+    </linearGradient>
+  </defs>
+  
+  <!-- ICON SECTION (Left) -->
+  <g id="atlas-icon">
+    <!-- Base container with golden ratio corner radius -->
+    <rect width="48" height="48" rx="12" fill="url(#combined-gradient)" />
+    
+    <!-- Network graph - Pentagon (72° between nodes) -->
+    <g id="network-structure" stroke="white" stroke-opacity="0.2" stroke-width="1" fill="none">
+      <!-- Pentagon perimeter -->
+      <path d="M 24 10 L 37.3 15.7 L 32.8 30.3 L 15.2 30.3 L 10.7 15.7 Z" />
+      
+      <!-- Pentagram connections -->
+      <path d="M 24 10 L 32.8 30.3 M 32.8 30.3 L 10.7 15.7 M 10.7 15.7 L 37.3 15.7 M 37.3 15.7 L 15.2 30.3 M 15.2 30.3 L 24 10" />
+      
+      <!-- Radial hub connections -->
+      <line x1="24" y1="24" x2="24" y2="10" />
+      <line x1="24" y1="24" x2="37.3" y2="15.7" />
+      <line x1="24" y1="24" x2="32.8" y2="30.3" />
+      <line x1="24" y1="24" x2="15.2" y2="30.3" />
+      <line x1="24" y1="24" x2="10.7" y2="15.7" />
+    </g>
+    
+    <!-- Network nodes -->
+    <g id="nodes">
+      <circle cx="24" cy="10" r="2.5" fill="white" opacity="0.9" />
+      <circle cx="37.3" cy="15.7" r="2.5" fill="white" opacity="0.9" />
+      <circle cx="32.8" cy="30.3" r="2.5" fill="white" opacity="0.9" />
+      <circle cx="15.2" cy="30.3" r="2.5" fill="white" opacity="0.9" />
+      <circle cx="10.7" cy="15.7" r="2.5" fill="white" opacity="0.9" />
+      
+      <circle cx="24" cy="10" r="1" fill="#6366f1" />
+      <circle cx="37.3" cy="15.7" r="1" fill="#6366f1" />
+      <circle cx="32.8" cy="30.3" r="1" fill="#6366f1" />
+      <circle cx="15.2" cy="30.3" r="1" fill="#6366f1" />
+      <circle cx="10.7" cy="15.7" r="1" fill="#6366f1" />
+    </g>
+    
+    <!-- Central A symbol (70.9° base angles) -->
+    <path d="M 24 18 L 20 32" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+    <path d="M 24 18 L 28 32" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.7" />
+    <line x1="21.5" y1="25.35" x2="26.5" y2="25.35" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.9" />
+    
+    <!-- Central hub (Fibonacci radius) -->
+    <circle cx="24" cy="24" r="4.5" fill="url(#network-pulse-combined)" />
+    <circle cx="24" cy="24" r="3" fill="#6366f1" />
+    <circle cx="24" cy="24" r="1.5" fill="white" />
+    
+    <!-- Scanning rings -->
+    <circle cx="24" cy="24" r="18" stroke="white" stroke-width="0.5" stroke-opacity="0.1" fill="none" stroke-dasharray="2 4" />
+    
+    <!-- Border -->
+    <rect x="0.5" y="0.5" width="47" height="47" rx="11.5" stroke="white" stroke-opacity="0.2" stroke-width="1" fill="none" />
+  </g>
+  
+  <!-- Connecting path from icon to wordmark -->
+  <path d="M 48 24 L 60 24" stroke="url(#path-gradient-combined)" stroke-width="1" stroke-dasharray="2 3" />
+  
+  <!-- WORDMARK SECTION (Right) -->
+  <g id="atlas-wordmark" transform="translate(60, 6)">
+    <!-- Background scan lines -->
+    <g opacity="0.06">
+      <line x1="0" y1="11.16" x2="140" y2="11.16" stroke="white" stroke-width="0.5" />
+      <line x1="0" y1="18" x2="140" y2="18" stroke="white" stroke-width="0.5" />
+      <line x1="0" y1="24.84" x2="140" y2="24.84" stroke="white" stroke-width="0.5" />
+    </g>
+    
+    <!-- Crawler path -->
+    <path d="M 12 8 L 22 18 L 32 8 L 50 18 L 70 8 L 90 18 L 110 8 L 128 18" 
+          stroke="url(#path-gradient-combined)" 
+          stroke-width="1" 
+          stroke-dasharray="2 3" 
+          fill="none" 
+          opacity="0.4" />
+    
+    <!-- Letter A (First) - 70.9° base angles -->
+    <g transform="translate(0, 0)">
+      <path d="M 12 4 L 3 28" stroke="white" stroke-width="3" stroke-linecap="round" fill="none" />
+      <path d="M 12 4 L 21 28" stroke="white" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.75" />
+      <line x1="7" y1="18.83" x2="17" y2="18.83" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+      <circle cx="12" cy="4" r="2" fill="white" opacity="0.9" />
+      <circle cx="12" cy="4" r="0.8" fill="#6366f1" />
+    </g>
+    
+    <!-- Letter T - 90° orthogonal -->
+    <g transform="translate(24, 0)">
+      <rect x="4" y="4" width="14" height="3" rx="1.5" fill="white" />
+      <path d="M 9.5 7 L 12.5 7 L 12 28 L 10 28 Z" fill="white" opacity="0.8" />
+      <circle cx="11" cy="5.5" r="1.5" fill="#a78bfa" />
+      <circle cx="11" cy="5.5" r="0.6" fill="white" />
+    </g>
+    
+    <!-- Letter L - 90° right angle -->
+    <g transform="translate(42, 0)">
+      <rect x="3" y="4" width="3" height="24" rx="1.5" fill="white" />
+      <rect x="3" y="25" width="15" height="3" rx="1.5" fill="white" opacity="0.8" />
+      <circle cx="4.5" cy="26.5" r="2" fill="white" opacity="0.3" />
+      <circle cx="4.5" cy="26.5" r="1" fill="#8b5cf6" />
+    </g>
+    
+    <!-- Letter A (Second) - 70.9° base angles -->
+    <g transform="translate(60, 0)">
+      <path d="M 12 4 L 3 28" stroke="white" stroke-width="3" stroke-linecap="round" fill="none" />
+      <path d="M 12 4 L 21 28" stroke="white" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.75" />
+      <line x1="7" y1="18.83" x2="17" y2="18.83" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+      
+      <!-- Pentagon overlay -->
+      <g opacity="0.2">
+        <circle cx="12" cy="10" r="1" fill="white" />
+        <circle cx="16.4" cy="13.2" r="1" fill="white" />
+        <circle cx="14.5" cy="18.5" r="1" fill="white" />
+        <circle cx="9.5" cy="18.5" r="1" fill="white" />
+        <circle cx="7.6" cy="13.2" r="1" fill="white" />
+      </g>
+      
+      <circle cx="12" cy="14" r="2.5" fill="url(#network-pulse-combined)" opacity="0.8" />
+      <circle cx="12" cy="14" r="1.2" fill="white" />
+    </g>
+    
+    <!-- Letter S - Mathematical curves -->
+    <g transform="translate(84, 0)">
+      <path d="M 3 6 C 3 4, 13 4, 13 8 C 13 12, 3 12, 3 16 C 3 20, 13 20, 13 24 C 13 28, 3 28, 3 26" 
+            stroke="white" stroke-width="3" stroke-linecap="round" fill="none" />
+      <circle cx="8" cy="10" r="1.2" fill="#8b5cf6" />
+      <circle cx="8" cy="22" r="1.2" fill="#8b5cf6" />
+    </g>
+    
+    <!-- Network connections -->
+    <g opacity="0.15">
+      <line x1="21" y1="16" x2="24" y2="16" stroke="white" stroke-width="1" />
+      <line x1="42" y1="16" x2="60" y2="16" stroke="white" stroke-width="1" />
+      <line x1="81" y1="16" x2="84" y2="16" stroke="white" stroke-width="1" />
+    </g>
+    
+    <!-- Baseline -->
+    <line x1="3" y1="30" x2="137" y2="30" stroke="white" stroke-width="0.5" stroke-opacity="0.1" />
+  </g>
+</svg>

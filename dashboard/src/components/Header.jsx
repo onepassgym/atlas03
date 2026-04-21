@@ -10,8 +10,8 @@ export default function Header() {
     <header className={styles.header} id="app-header">
       <div className={styles.headerLeft}>
         <div className={styles.logoContainer}>
-          <img src="./logo.svg" alt="Atlas Logo" className={styles.desktopLogo} />
-          <img src="./logo-old.svg" alt="Atlas Logo" className={styles.mobileLogo} />
+          <img src="./full-logo.svg" alt="Atlas Logo" className={styles.desktopLogo} />
+          <img src="./favicon.svg" alt="Atlas Logo" className={styles.mobileLogo} />
         </div>
         {!isProdHost && (
           <div className={styles.envToggle}>
