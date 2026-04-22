@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Building2, MessageCircle, Camera, Zap, Target, Link2, Activity, TrendingUp } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import EventFeed from '../components/EventFeed';
@@ -13,6 +13,11 @@ import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#f97316', '#ec4899'];
+
+function formatCategory(cat) {
+  if (!cat || cat === 'undefined' || cat === 'unknown') return 'Unknown';
+  return String(cat).split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
 
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
@@ -76,7 +81,7 @@ export default function Overview() {
   if (loading) return <div className="container"><Skeleton height={100} count={3} /></div>;
 
   const cityData = (stats?.topCities || []).slice(0, 8).map(c => ({ name: c._id || 'Unknown', count: c.count }));
-  const catData = (stats?.byCategory || []).slice(0, 8).map(c => ({ name: c._id || 'Unknown', value: c.count }));
+  const catData = (stats?.byCategory || []).slice(0, 8).map(c => ({ name: formatCategory(c._id), value: c.count }));
 
   // Throttle health color
   const throttleColor = crawlActivity.throttle <= 1.0 ? 'green' : crawlActivity.throttle <= 2.0 ? 'yellow' : 'red';
@@ -110,25 +115,73 @@ export default function Overview() {
       {/* ── Charts ────── */}
       <div className="grid-2" style={{ marginTop: 8 }}>
         <div className="card">
-          <div className="card-header"><span className="card-title">Top Geographies</span><span className="card-icon">📍</span></div>
-          {cityData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={cityData} layout="vertical" margin={{ left: 8, right: 20 }}>
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="count" radius={[0, 4, 4, 0]} fill="url(#barGradient)">
-                  {cityData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                </Bar>
-                <defs>
-                  <linearGradient id="barGradient" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#3b82f6" />
-                    <stop offset="100%" stopColor="#06b6d4" />
-                  </linearGradient>
-                </defs>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <div className="empty-state">No city data</div>}
+          <div className="card-header">
+            <span className="card-title">Top Geographies</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>
+              {cityData.reduce((s, c) => s + c.count, 0)} total
+            </span>
+          </div>
+          {cityData.length > 0 ? (() => {
+            const max = cityData[0]?.count || 1;
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
+                {cityData.map((c, i) => {
+                  const pct = Math.round((c.count / max) * 100);
+                  // Shorten "Kyiv City, Kyiv, Ukraine" → "Kyiv City" + "Ukraine"
+                  const parts = c.name.split(',').map(p => p.trim());
+                  const city    = parts[0] || c.name;
+                  const country = parts[parts.length - 1] || '';
+                  const color   = CHART_COLORS[i % CHART_COLORS.length];
+                  return (
+                    <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {/* Rank badge */}
+                      <div style={{
+                        width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                        background: `${color}22`, color, fontWeight: 800,
+                        fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {i + 1}
+                      </div>
+                      {/* Name + bar */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {city}
+                            </span>
+                            {country && city !== country && (
+                              <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 5 }}>
+                                {country}
+                              </span>
+                            )}
+                          </div>
+                          <span style={{
+                            fontSize: 12, fontWeight: 700, fontFamily: 'var(--mono)',
+                            color, flexShrink: 0, marginLeft: 8,
+                          }}>
+                            {c.count.toLocaleString()}
+                          </span>
+                        </div>
+                        {/* Animated fill bar */}
+                        <div style={{ height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 0.6, delay: i * 0.07, ease: 'easeOut' }}
+                            style={{
+                              height: '100%', borderRadius: 3,
+                              background: `linear-gradient(90deg, ${color}, ${color}99)`,
+                              boxShadow: `0 0 6px ${color}55`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })() : <div className="empty-state">No city data</div>}
         </div>
 
         <div className="card">

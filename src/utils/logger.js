@@ -17,19 +17,26 @@ const fmt = printf(({ level, message, timestamp, stack, ...meta }) => {
 });
 
 // ── Custom EventBus Transport ──────────────────────────────────────────────
+// Regex to detect Morgan HTTP access log lines (noise, not app events)
+const HTTP_ACCESS_RE = /^\S+ - - \[.+\] "(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) /;
+
 class EventBusTransport extends winston.Transport {
   constructor(opts) {
     super(opts);
   }
   log(info, callback) {
-    setImmediate(() => {
-      bus.publish('system:log', {
-        level: info.level,
-        message: info.message,
-        timestamp: info.timestamp,
-        stack: info.stack
+    // Skip raw HTTP access log lines from Morgan — they flood the SSE stream
+    // with irrelevant request noise. Only publish meaningful app-level logs.
+    if (!HTTP_ACCESS_RE.test(info.message)) {
+      setImmediate(() => {
+        bus.publish('system:log', {
+          level: info.level,
+          message: info.message,
+          timestamp: info.timestamp,
+          stack: info.stack,
+        });
       });
-    });
+    }
     callback();
   }
 }

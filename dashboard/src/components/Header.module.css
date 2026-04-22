@@ -60,14 +60,13 @@
 /* ── Mobile Header ──────────────────────────────────────────── */
 @media (max-width: 640px) {
   .header {
-    flex-wrap: wrap; gap: 8px;
-    padding: 10px 14px;
+    padding: 8px 12px;
   }
   .headerLeft { gap: 8px; }
   .desktopLogo { display: none; }
-  .mobileLogo { display: block; }
+  .mobileLogo { display: block; height: 28px; width: 28px; }
   .envToggle { margin-left: 0; }
-  .envBtn { padding: 3px 8px; font-size: 9px; }
+  .envBtn { padding: 4px 8px; font-size: 10px; }
   .headerRight { gap: 8px; }
   .envStatus { display: none; }
   .connectionBadge { font-size: 11px; }

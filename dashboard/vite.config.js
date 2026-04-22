@@ -8,7 +8,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: process.env.VITE_API_URL || 'http://api:8747',
+        // VITE_API_URL can be set in .env.local for Docker-in-Docker scenarios.
+        // Defaults to localhost:8747 for local development.
+        target: process.env.VITE_API_URL || 'http://localhost:8747',
         changeOrigin: true,
       },
     },

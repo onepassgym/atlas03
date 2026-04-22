@@ -1,137 +1,396 @@
 import { useApp } from '../context/AppContext';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useSpring, useMotionValue, animate } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { Activity, Zap, Package, Search, Clock, AlertTriangle } from 'lucide-react';
 
+/* ─── Constants ─────────────────────────────────────────── */
 const STATUS_CONFIG = {
-  idle:      { label: 'Idle',       color: 'var(--text-muted)',  icon: '💤', pulse: false },
-  searching: { label: 'Searching',  color: 'var(--cyan)',        icon: '🔍', pulse: true },
-  scraping:  { label: 'Scraping',   color: 'var(--success)',     icon: '⚡', pulse: true },
-  paused:    { label: 'Paused',     color: 'var(--warning)',     icon: '☕', pulse: false },
-  blocked:   { label: 'Blocked',    color: 'var(--danger)',      icon: '🛑', pulse: true },
+  idle:      { label: 'Idle',      color: '#6b7280', glow: 'rgba(107,114,128,0.3)',  icon: Activity,    pulse: false },
+  searching: { label: 'Searching', color: '#06b6d4', glow: 'rgba(6,182,212,0.35)',   icon: Search,      pulse: true  },
+  scraping:  { label: 'Scraping',  color: '#10b981', glow: 'rgba(16,185,129,0.35)',  icon: Zap,         pulse: true  },
+  paused:    { label: 'Paused',    color: '#f59e0b', glow: 'rgba(245,158,11,0.3)',   icon: Clock,       pulse: false },
+  blocked:   { label: 'Blocked',   color: '#ef4444', glow: 'rgba(239,68,68,0.35)',   icon: AlertTriangle, pulse: true },
 };
 
-function ThrottleGauge({ multiplier }) {
-  const pct = Math.min(100, (multiplier / 4) * 100);
-  const color = multiplier <= 1.0 ? 'var(--success)' : multiplier <= 2.0 ? 'var(--warning)' : 'var(--danger)';
-  const label = multiplier <= 0.85 ? 'Cruising' : multiplier <= 1.1 ? 'Normal' : multiplier <= 2.0 ? 'Caution' : 'Emergency';
+const ACTION_META = {
+  'gym-start':    { bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)',  dot: '#3b82f6',  icon: '⚡' },
+  'gym-done':     { bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.25)',  dot: '#10b981',  icon: '✅' },
+  'gym-failed':   { bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.25)',   dot: '#ef4444',  icon: '❌' },
+  'batch-start':  { bg: 'rgba(139,92,246,0.08)',  border: 'rgba(139,92,246,0.25)',  dot: '#8b5cf6',  icon: '📦' },
+  'batch-done':   { bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.25)',  dot: '#10b981',  icon: '🏁' },
+  'search-start': { bg: 'rgba(6,182,212,0.08)',   border: 'rgba(6,182,212,0.25)',   dot: '#06b6d4',  icon: '🔎' },
+  'search-done':  { bg: 'rgba(6,182,212,0.08)',   border: 'rgba(6,182,212,0.25)',   dot: '#06b6d4',  icon: '📋' },
+  'throttle':     { bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)',  dot: '#f59e0b',  icon: '⚙️' },
+  'block':        { bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.25)',   dot: '#ef4444',  icon: '🛑' },
+  'pause':        { bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)',  dot: '#f59e0b',  icon: '☕' },
+  default:        { bg: 'rgba(107,114,128,0.06)', border: 'rgba(107,114,128,0.15)', dot: '#6b7280',  icon: '•' },
+};
+
+/* ─── Helpers ────────────────────────────────────────────── */
+function fmtTime(ts) {
+  return new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function formatCategory(cat) {
+  if (!cat) return '?';
+  return String(cat).split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+function getActionText(a) {
+  switch (a.type) {
+    case 'gym-start':    return `Scraping: ${decodeURIComponent(a.url || '?').slice(0, 50)}`;
+    case 'gym-done':     return `Done: ${a.name} — ${((a.duration || 0)/1000).toFixed(1)}s`;
+    case 'gym-failed':   return `${a.isBlock ? '🛑 Blocked' : 'Failed'}: ${a.error?.slice(0, 55) || '?'} (attempt ${a.attempt})`;
+    case 'batch-start':  return `Batch #${a.batch} — ${a.city} · ${a.urls} URLs`;
+    case 'batch-done':   return `Batch #${a.batch} done · ✅${a.stats?.created||0} 🔄${a.stats?.updated||0} ❌${a.stats?.failed||0}`;
+    case 'search-start': return `Discovery: "${formatCategory(a.category)}" in ${a.city}`;
+    case 'search-done':  return `Found ${a.found} URLs (${a.total} unique)`;
+    case 'throttle':     return `Throttle ${a.direction === 'faster' ? '↓' : '↑'} → ${a.multiplier?.toFixed(2)}×`;
+    case 'block':        return `Google block — cooldown ${((a.cooldown||0)/1000).toFixed(0)}s`;
+    case 'pause':        return `Human pause ${((a.duration||0)/1000).toFixed(1)}s`;
+    default:             return JSON.stringify(a).slice(0, 60);
+  }
+}
+
+/* ─── Animated Arc Gauge ─────────────────────────────────── */
+function ArcGauge({ value, max = 4, color, label, sublabel }) {
+  const r = 36, cx = 44, cy = 44;
+  const strokeW = 8;
+  const circumference = Math.PI * r; // half-circle arc
+  const pct = Math.min(1, value / max);
+  const dashOffset = circumference * (1 - pct);
 
   return (
-    <div style={{ flex: 1, minWidth: 140 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Throttle</span>
-        <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color, fontWeight: 700 }}>{multiplier.toFixed(2)}× · {label}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+      <svg width={88} height={52} viewBox="0 0 88 52">
+        {/* Track */}
+        <path
+          d={`M ${cx - r},${cy} A ${r},${r} 0 0,1 ${cx + r},${cy}`}
+          fill="none"
+          stroke="var(--border)"
+          strokeWidth={strokeW}
+          strokeLinecap="round"
+        />
+        {/* Fill */}
+        <motion.path
+          d={`M ${cx - r},${cy} A ${r},${r} 0 0,1 ${cx + r},${cy}`}
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeW}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          animate={{ strokeDashoffset: dashOffset }}
+          transition={{ duration: 0.7, ease: 'easeOut' }}
+          style={{ filter: `drop-shadow(0 0 4px ${color})` }}
+        />
+        {/* Glow dot at tip */}
+        <motion.circle
+          animate={{
+            cx: cx + r * Math.cos(Math.PI - pct * Math.PI),
+            cy: cy - r * Math.sin(pct * Math.PI),
+          }}
+          r={strokeW / 2 + 1}
+          fill={color}
+          transition={{ duration: 0.7, ease: 'easeOut' }}
+          style={{ filter: `drop-shadow(0 0 5px ${color})` }}
+        />
+        {/* Center text */}
+        <text x={cx} y={cy - 4} textAnchor="middle" fontSize="13" fontWeight="700" fill={color} fontFamily="var(--mono)">
+          {value.toFixed(2)}×
+        </text>
+      </svg>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: -4 }}>{label}</div>
+      {sublabel && <div style={{ fontSize: 10, color, fontWeight: 600 }}>{sublabel}</div>}
+    </div>
+  );
+}
+
+/* ─── Activity Ring (status indicator) ──────────────────── */
+function ActivityRing({ status }) {
+  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.idle;
+  const StatusIcon = cfg.icon;
+
+  return (
+    <div style={{ position: 'relative', width: 52, height: 52, flexShrink: 0 }}>
+      {/* Outer pulse ring */}
+      {cfg.pulse && (
+        <motion.div
+          animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+          transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            border: `2px solid ${cfg.color}`,
+            boxShadow: `0 0 12px ${cfg.glow}`,
+          }}
+        />
+      )}
+      {/* Main ring */}
+      <motion.div
+        animate={cfg.pulse ? { boxShadow: [`0 0 8px ${cfg.glow}`, `0 0 20px ${cfg.glow}`, `0 0 8px ${cfg.glow}`] } : {}}
+        transition={{ duration: 1.5, repeat: Infinity }}
+        style={{
+          width: 52, height: 52, borderRadius: '50%',
+          background: `radial-gradient(circle at 35% 35%, ${cfg.glow}, transparent)`,
+          border: `2px solid ${cfg.color}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <StatusIcon size={22} color={cfg.color} strokeWidth={2} />
+      </motion.div>
+    </div>
+  );
+}
+
+/* ─── Mini Sparkline (throughput over recent actions) ─────── */
+function Sparkline({ actions }) {
+  const W = 120, H = 32, pad = 4;
+  if (!actions.length) return null;
+
+  // Count events per second bucket (last 15 actions)
+  const recent = actions.slice(0, 15).reverse();
+  const points = recent.map((a, i) => ({
+    x: pad + (i / Math.max(recent.length - 1, 1)) * (W - pad * 2),
+    y: H - pad - (a.type === 'gym-done' ? H - pad * 2 : a.type === 'gym-failed' ? (H - pad * 2) * 0.2 : (H - pad * 2) * 0.6),
+    color: a.type === 'gym-done' ? '#10b981' : a.type === 'gym-failed' ? '#ef4444' : '#3b82f6',
+  }));
+
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${H - pad} L ${points[0].x} ${H - pad} Z`;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        Activity Trace
       </div>
-      <div className="progress-bar" style={{ height: 6 }}>
-        <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`, background: color, transition: 'all 0.6s ease' }} />
+      <svg width={W} height={H} style={{ overflow: 'visible' }}>
+        <defs>
+          <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {/* Area fill */}
+        <motion.path d={areaD} fill="url(#sparkGrad)"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} />
+        {/* Line */}
+        <motion.path d={pathD} fill="none" stroke="#3b82f6" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
+          initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.8, ease: 'easeOut' }} />
+        {/* Dots */}
+        {points.map((p, i) => (
+          <motion.circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 3.5 : 2}
+            fill={p.color}
+            initial={{ scale: 0 }} animate={{ scale: 1 }}
+            transition={{ delay: i * 0.02 }}
+            style={i === points.length - 1 ? { filter: `drop-shadow(0 0 4px ${p.color})` } : {}}
+          />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+/* ─── Progress Band ──────────────────────────────────────── */
+function ProgressBand({ value, total, label, color }) {
+  const pct = total > 0 ? Math.min(100, ((value + 1) / total) * 100) : 0;
+  return (
+    <div style={{ flex: 1 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</span>
+        <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color, fontWeight: 700 }}>{value + 1} / {total}</span>
+      </div>
+      <div style={{ height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+        <motion.div
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          style={{
+            height: '100%', borderRadius: 3,
+            background: `linear-gradient(90deg, ${color}, ${color}88)`,
+            boxShadow: `0 0 6px ${color}66`,
+          }}
+        />
       </div>
     </div>
   );
 }
 
-function ActionTimeline({ actions }) {
-  if (!actions.length) return <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '8px 0' }}>No activity yet</div>;
-
-  const fmtTime = (ts) => new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-  const getActionDisplay = (a) => {
-    switch (a.type) {
-      case 'gym-start':   return { icon: '🔍', text: `Scraping: ${decodeURIComponent(a.url || '?').slice(0, 40)}`, color: 'var(--accent)' };
-      case 'gym-done':    return { icon: '✅', text: `${a.name} (${((a.duration || 0) / 1000).toFixed(1)}s)`, color: 'var(--success)' };
-      case 'gym-failed':  return { icon: '❌', text: `${a.isBlock ? 'Blocked' : 'Failed'}: ${a.error?.slice(0, 50) || '?'} (${a.attempt}/${3})`, color: 'var(--danger)' };
-      case 'batch-start': return { icon: '📦', text: `Batch ${a.batch} started — ${a.city} (${a.urls} URLs)`, color: 'var(--accent)' };
-      case 'batch-done':  return { icon: '🏁', text: `Batch ${a.batch} done — ✅${a.stats?.created || 0} 🔄${a.stats?.updated || 0} ❌${a.stats?.failed || 0}`, color: 'var(--success)' };
-      case 'search-start':return { icon: '🔎', text: `Searching: "${a.category}" in ${a.city}`, color: 'var(--cyan)' };
-      case 'search-done': return { icon: '📋', text: `Found ${a.found} URLs (${a.total} unique total)`, color: 'var(--cyan)' };
-      case 'throttle':    return { icon: a.direction === 'faster' ? '🟢' : '🟡', text: `Throttle → ${a.multiplier?.toFixed(2)}× (${a.direction})`, color: a.direction === 'faster' ? 'var(--success)' : 'var(--warning)' };
-      case 'block':       return { icon: '🛑', text: `Google blocked — cooldown ${((a.cooldown || 0) / 1000).toFixed(0)}s`, color: 'var(--danger)' };
-      case 'pause':       return { icon: '☕', text: `Human pause ${((a.duration || 0) / 1000).toFixed(1)}s`, color: 'var(--warning)' };
-      default:            return { icon: '•', text: JSON.stringify(a).slice(0, 60), color: 'var(--text-muted)' };
-    }
-  };
+/* ─── Event Stream Row ───────────────────────────────────── */
+function EventRow({ action, index }) {
+  const meta = ACTION_META[action.type] || ACTION_META.default;
 
   return (
-    <div style={{ maxHeight: 220, overflowY: 'auto', scrollbarWidth: 'thin' }}>
-      {actions.map((a, i) => {
-        const { icon, text, color } = getActionDisplay(a);
-        return (
-          <div key={`${a.timestamp}-${i}`} style={{
-            display: 'flex', alignItems: 'flex-start', gap: 8, padding: '5px 0',
-            borderBottom: '1px solid var(--table-border)', fontSize: 12,
-            animation: i === 0 ? 'fadeIn 0.3s ease' : undefined,
-          }}>
-            <span style={{ flexShrink: 0, fontSize: 11, width: 18, textAlign: 'center' }}>{icon}</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-muted)', flexShrink: 0, minWidth: 55 }}>
-              {a.timestamp ? fmtTime(a.timestamp) : ''}
-            </span>
-            <span style={{ color, flex: 1, lineHeight: 1.4 }}>{text}</span>
+    <motion.div
+      layout
+      initial={{ opacity: 0, x: -16, height: 0 }}
+      animate={{ opacity: 1, x: 0, height: 'auto' }}
+      exit={{ opacity: 0, x: 16, height: 0 }}
+      transition={{ duration: 0.25, delay: index === 0 ? 0 : 0 }}
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 10,
+        padding: '7px 10px', borderRadius: 8, marginBottom: 4,
+        background: meta.bg,
+        border: `1px solid ${meta.border}`,
+        overflow: 'hidden',
+      }}
+    >
+      {/* Timeline dot */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 2, flexShrink: 0 }}>
+        <motion.div
+          animate={index === 0 ? { scale: [1, 1.4, 1], opacity: [1, 0.5, 1] } : {}}
+          transition={{ duration: 1.2, repeat: index === 0 ? 3 : 0 }}
+          style={{ width: 8, height: 8, borderRadius: '50%', background: meta.dot, boxShadow: index === 0 ? `0 0 6px ${meta.dot}` : 'none' }}
+        />
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6, marginBottom: 1 }}>
+          <span style={{ fontSize: 12, color: meta.dot, fontWeight: 600, lineHeight: 1.3, wordBreak: 'break-all' }}>
+            {meta.icon} {getActionText(action)}
+          </span>
+        </div>
+        {action.timestamp && (
+          <div style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--text-muted)' }}>
+            {fmtTime(action.timestamp)}
           </div>
-        );
-      })}
-    </div>
+        )}
+      </div>
+    </motion.div>
   );
 }
 
+/* ─── Main Component ─────────────────────────────────────── */
 export default function CrawlActivity() {
   const { crawlActivity } = useApp();
   const { currentGym, batch, throttle, recentActions, status } = crawlActivity;
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.idle;
 
+  // Count stats from recent actions
+  const doneCount  = recentActions.filter(a => a.type === 'gym-done').length;
+  const failCount  = recentActions.filter(a => a.type === 'gym-failed').length;
+  const blockCount = recentActions.filter(a => a.type === 'block').length;
+
+  const throttleLabel =
+    throttle <= 0.85 ? 'Cruising' :
+    throttle <= 1.1  ? 'Normal'   :
+    throttle <= 2.0  ? 'Caution'  : 'Emergency';
+
+  const throttleColor =
+    throttle <= 1.0 ? '#10b981' :
+    throttle <= 2.0 ? '#f59e0b' : '#ef4444';
+
   return (
     <motion.div
-      className="card crawl-activity-card"
-      initial={{ opacity: 0, y: 12 }}
+      className="card"
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.35 }}
+      style={{ overflow: 'hidden' }}
     >
-      <div className="card-header">
+      {/* ── Header ── */}
+      <div className="card-header" style={{ paddingBottom: 14 }}>
         <span className="card-title">Live Crawler Activity</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div className={`status-indicator ${cfg.pulse ? 'pulse' : ''}`} style={{ background: cfg.color }} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: cfg.color }}>{cfg.icon} {cfg.label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {cfg.pulse && (
+            <motion.div
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.color }}
+            />
+          )}
+          <span style={{ fontSize: 12, fontWeight: 700, color: cfg.color }}>{cfg.label}</span>
         </div>
       </div>
 
-      {/* Current Activity Banner */}
-      <AnimatePresence mode="wait">
-        {status !== 'idle' && currentGym && (
-          <motion.div
-            key={currentGym.url}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 10 }}
-            className="crawl-current"
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                {status === 'searching' ? `Searching: "${currentGym.url}"` : `Scraping: ${decodeURIComponent(currentGym.url || '').slice(0, 45)}`}
-              </span>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-muted)' }}>
-                {currentGym.urlIndex + 1}/{currentGym.total}
-              </span>
-            </div>
-            <div className="progress-bar" style={{ height: 4 }}>
-              <div className="progress-fill" style={{ width: `${Math.round(((currentGym.urlIndex + 1) / currentGym.total) * 100)}%` }} />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ── Status + Throttle + Sparkline row ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '0 4px 14px', borderBottom: '1px solid var(--border)' }}>
 
-      {/* Batch + Throttle row */}
-      <div style={{ display: 'flex', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
-        {batch && (
-          <div style={{ flex: 1, minWidth: 140 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Batch</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-              📦 {batch.cityName} — Batch {batch.batchIndex} ({batch.urlCount} URLs)
-            </div>
+        {/* Activity Ring */}
+        <ActivityRing status={status} />
+
+        {/* Middle: Status text + batch info */}
+        <div style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+            {status === 'idle' ? 'Waiting for crawler events…' :
+             status === 'paused' ? '⏸ Enrichment paused' :
+             status === 'blocked' ? '🛑 Google block detected' :
+             batch ? `${batch.cityName} · Batch #${batch.batchIndex}` :
+             'Crawler active'}
           </div>
-        )}
-        <ThrottleGauge multiplier={throttle} />
+          {batch && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <span>📦 {batch.urlCount} URLs</span>
+              <span>✅ {doneCount} done</span>
+              {failCount > 0 && <span style={{ color: 'var(--danger)' }}>❌ {failCount} failed</span>}
+              {blockCount > 0 && <span style={{ color: 'var(--danger)' }}>🛑 {blockCount} blocks</span>}
+            </div>
+          )}
+
+          {/* Current URL progress */}
+          <AnimatePresence>
+            {status !== 'idle' && currentGym && (
+              <motion.div
+                key={currentGym.url}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                style={{ marginTop: 8 }}
+              >
+                <ProgressBand
+                  value={currentGym.urlIndex}
+                  total={currentGym.total}
+                  label={status === 'searching' ? 'Discovery' : 'Batch'}
+                  color={cfg.color}
+                />
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3, fontFamily: 'var(--mono)', wordBreak: 'break-all' }}>
+                  {status === 'searching'
+                    ? `Searching: "${formatCategory(currentGym.url)}"`
+                    : decodeURIComponent(currentGym.url || '').slice(0, 60)}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Right side: Arc gauge + sparkline */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <ArcGauge value={throttle} max={4} color={throttleColor} label="Throttle" sublabel={throttleLabel} />
+          <Sparkline actions={recentActions} />
+        </div>
       </div>
 
-      {/* Recent Actions Timeline */}
-      <div style={{ marginTop: 14 }}>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Recent Activity</div>
-        <ActionTimeline actions={recentActions} />
+      {/* ── Event Stream ── */}
+      <div style={{ paddingTop: 12 }}>
+        <div style={{
+          fontSize: 10, fontWeight: 700, color: 'var(--text-muted)',
+          textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8,
+          display: 'flex', justifyContent: 'space-between',
+        }}>
+          <span>Event Stream</span>
+          {recentActions.length > 0 && (
+            <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>
+              {recentActions.length} events
+            </span>
+          )}
+        </div>
+
+        <div style={{ maxHeight: 240, overflowY: 'auto', scrollbarWidth: 'thin', paddingRight: 2 }}>
+          <AnimatePresence initial={false}>
+            {recentActions.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: 12 }}
+              >
+                <div style={{ fontSize: 28, marginBottom: 6 }}>📡</div>
+                <div>Waiting for crawler events…</div>
+                <div style={{ fontSize: 11, marginTop: 4, opacity: 0.6 }}>Events appear in real-time via SSE</div>
+              </motion.div>
+            ) : (
+              recentActions.map((action, i) => (
+                <EventRow key={`${action.timestamp}-${i}`} action={action} index={i} />
+              ))
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </motion.div>
   );

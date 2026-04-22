@@ -29,7 +29,7 @@ export default function TabNav({ badges = {} }) {
       ))}
       <style>{`
         .tab-nav {
-          position: sticky; top: 49px; z-index: 99;
+          position: sticky; top: 55px; z-index: 99;
           background: var(--bg-tab);
           backdrop-filter: blur(12px);
           border-bottom: 1px solid var(--border);
@@ -54,7 +54,7 @@ export default function TabNav({ badges = {} }) {
           font-family: var(--mono);
         }
         @media (max-width: 640px) {
-          .tab-nav { padding: 0 8px; top: 40px; }
+          .tab-nav { padding: 0 8px; top: 45px; }
           .tab-btn { padding: 10px 12px; font-size: 11px; gap: 4px; }
           .tab-badge { font-size: 9px; padding: 0 4px; }
         }
