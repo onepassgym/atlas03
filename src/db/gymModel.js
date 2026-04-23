@@ -124,6 +124,7 @@ const GymSchema = new mongoose.Schema({
   // Data Intelligence (Phase 2)
   qualityScore:   { type: Number, default: 0 },
   scoreBreakdown: mongoose.Schema.Types.Mixed,
+  visualAppealScore: { type: Number, default: 0 },
   sentimentScore: { type: Number, default: 0 },
   sentimentTags:  {
     positive: [String],
