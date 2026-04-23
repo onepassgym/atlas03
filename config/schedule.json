@@ -2,37 +2,233 @@
   "defaultFrequency": "weekly",
   "defaultCron": "30 20 * * 6",
   "timezone": "UTC",
-
   "cities": [
-    { "name": "Delhi, India",                      "frequency": "weekly",  "priority": 1 },
-    { "name": "Gurgaon, Haryana, India",            "frequency": "weekly",  "priority": 1 },
-    { "name": "Noida, Uttar Pradesh, India",        "frequency": "weekly",  "priority": 1 },
-    { "name": "Ghaziabad, Uttar Pradesh, India",    "frequency": "weekly",  "priority": 1 },
-    { "name": "Mumbai, Maharashtra, India",         "frequency": "weekly",  "priority": 2 },
-    { "name": "Bangalore, Karnataka, India",        "frequency": "weekly",  "priority": 2 },
-    { "name": "Pune, Maharashtra, India",           "frequency": "biweekly","priority": 3 },
-    { "name": "Hyderabad, Telangana, India",        "frequency": "biweekly","priority": 3 },
-    { "name": "Chennai, Tamil Nadu, India",         "frequency": "biweekly","priority": 3 },
-    { "name": "Kolkata, West Bengal, India",        "frequency": "biweekly","priority": 3 },
-    { "name": "Ahmedabad, Gujarat, India",          "frequency": "monthly", "priority": 4 },
-    { "name": "Jaipur, Rajasthan, India",           "frequency": "monthly", "priority": 4 },
-    { "name": "Surat, Gujarat, India",              "frequency": "monthly", "priority": 4 },
-    { "name": "Lucknow, Uttar Pradesh, India",      "frequency": "monthly", "priority": 4 },
-    { "name": "Chandigarh, India",                  "frequency": "monthly", "priority": 4 },
-    { "name": "Kochi, Kerala, India",               "frequency": "monthly", "priority": 5 },
-    { "name": "Indore, Madhya Pradesh, India",      "frequency": "monthly", "priority": 5 },
-    { "name": "Nagpur, Maharashtra, India",         "frequency": "monthly", "priority": 5 },
-    { "name": "Vadodara, Gujarat, India",           "frequency": "monthly", "priority": 5 },
-    { "name": "Bhopal, Madhya Pradesh, India",      "frequency": "monthly", "priority": 5 },
-    { "name": "Patna, Bihar, India",                "frequency": "monthly", "priority": 5 }
+    {
+      "name": "Delhi, India",
+      "frequency": "weekly",
+      "priority": 1
+    },
+    {
+      "name": "Gurgaon, Haryana, India",
+      "frequency": "weekly",
+      "priority": 1
+    },
+    {
+      "name": "Noida, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 1
+    },
+    {
+      "name": "Ghaziabad, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 1
+    },
+    {
+      "name": "Mumbai, Maharashtra, India",
+      "frequency": "weekly",
+      "priority": 2
+    },
+    {
+      "name": "Bangalore, Karnataka, India",
+      "frequency": "weekly",
+      "priority": 2
+    },
+    {
+      "name": "Pune, Maharashtra, India",
+      "frequency": "biweekly",
+      "priority": 3
+    },
+    {
+      "name": "Hyderabad, Telangana, India",
+      "frequency": "biweekly",
+      "priority": 3
+    },
+    {
+      "name": "Chennai, Tamil Nadu, India",
+      "frequency": "biweekly",
+      "priority": 3
+    },
+    {
+      "name": "Kolkata, West Bengal, India",
+      "frequency": "biweekly",
+      "priority": 3
+    },
+    {
+      "name": "Ahmedabad, Gujarat, India",
+      "frequency": "monthly",
+      "priority": 4
+    },
+    {
+      "name": "Jaipur, Rajasthan, India",
+      "frequency": "monthly",
+      "priority": 4
+    },
+    {
+      "name": "Surat, Gujarat, India",
+      "frequency": "monthly",
+      "priority": 4
+    },
+    {
+      "name": "Lucknow, Uttar Pradesh, India",
+      "frequency": "monthly",
+      "priority": 4
+    },
+    {
+      "name": "Chandigarh, India",
+      "frequency": "monthly",
+      "priority": 4
+    },
+    {
+      "name": "Kochi, Kerala, India",
+      "frequency": "monthly",
+      "priority": 5
+    },
+    {
+      "name": "Indore, Madhya Pradesh, India",
+      "frequency": "monthly",
+      "priority": 5
+    },
+    {
+      "name": "Nagpur, Maharashtra, India",
+      "frequency": "monthly",
+      "priority": 5
+    },
+    {
+      "name": "Vadodara, Gujarat, India",
+      "frequency": "monthly",
+      "priority": 5
+    },
+    {
+      "name": "Bhopal, Madhya Pradesh, India",
+      "frequency": "monthly",
+      "priority": 5
+    },
+    {
+      "name": "Patna, Bihar, India",
+      "frequency": "monthly",
+      "priority": 5
+    },
+    {
+      "name": "Noida (Gautam Buddh Nagar), Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Greater Noida, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Meerut, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Hapur, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Baghpat, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Bulandshahr, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Shamli, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Muzaffarnagar, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Loni, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Modinagar, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Dasna, Uttar Pradesh, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Faridabad, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Sonipat, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Panipat, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Rohtak, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Palwal, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Charkhi Dadri, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Mahendragarh, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Jind, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Karnal, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Nuh, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Bahadurgarh, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    },
+    {
+      "name": "Manesar, Haryana, India",
+      "frequency": "weekly",
+      "priority": 3
+    }
   ],
-
   "staleness": {
     "enrichmentThresholdDays": 30,
     "maxStaleDays": 90,
     "batchSize": 50
   },
-
   "enrichment": {
     "enabled": true,
     "completenessThreshold": 60,
