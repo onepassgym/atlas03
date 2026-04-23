@@ -45,9 +45,12 @@ function calculateQualityScore(gymData) {
   const filled = checks.filter(Boolean).length;
   breakdown.completeness = Math.round((filled / checks.length) * 20);
 
-  // 4. Media Richness (Max 10 points - 2 pts per photo max 5)
+  // 4. Media Richness (Max 10 points - 2 pts per photo max 5, + bonus for high visual appeal)
   const photoCount = gymData.photos?.length || gymData.totalPhotos || 0;
-  breakdown.media = Math.min(photoCount * 2, 10);
+  let mediaScore = Math.min(photoCount * 2, 10);
+  if (gymData.visualAppealScore > 80) mediaScore += 2; // small bonus for great photos
+  else if (gymData.visualAppealScore < 40 && photoCount > 0) mediaScore -= 2; // penalty for bad photos
+  breakdown.media = Math.max(0, Math.min(mediaScore, 10));
 
   // 5. Freshness (Max 10 points) - Assumes if being crawled, it's fresh right now.
   // We can refine this if we run the scorer asynchronously, but for upsert, it's 10.

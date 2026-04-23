@@ -6,6 +6,7 @@ const fs     = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const cfg    = require('../../config');
 const logger = require('../utils/logger');
+const { analyzePhotoBuffer } = require('../services/intelligence/photoVision');
 
 const BASE    = path.resolve(cfg.media.basePath);
 const PUB_URL = cfg.media.baseUrl.replace(/\/$/, '');
@@ -39,10 +40,13 @@ async function downloadImage(url, gymSlug = 'gym') {
       const resp   = await AX.get(url);
       const buffer = Buffer.from(resp.data);
 
-      const [meta] = await Promise.all([
+      const [meta, intelligence] = await Promise.all([
         sharp(buffer).jpeg({ quality: 82, progressive: true }).toFile(absPath),
-        sharp(buffer).resize(400, 300, { fit: 'cover' }).jpeg({ quality: 65 }).toFile(thumbPath),
+        analyzePhotoBuffer(buffer),
       ]);
+      
+      // Also generate thumbnail
+      await sharp(buffer).resize(400, 300, { fit: 'cover' }).jpeg({ quality: 65 }).toFile(thumbPath);
 
       return {
         originalUrl:  url,
@@ -53,6 +57,10 @@ async function downloadImage(url, gymSlug = 'gym') {
         width:        meta.width,
         height:       meta.height,
         sizeBytes:    meta.size,
+        appealScore:  intelligence.appealScore,
+        brightness:   intelligence.brightness,
+        contrast:     intelligence.contrast,
+        tags:         intelligence.tags,
         downloadedAt: new Date(),
       };
     } catch (err) {

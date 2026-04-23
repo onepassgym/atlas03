@@ -74,6 +74,10 @@ async function processMediaJob(job) {
               width:        m.width,
               height:       m.height,
               sizeBytes:    m.sizeBytes,
+              appealScore:  m.appealScore || 0,
+              brightness:   m.brightness,
+              contrast:     m.contrast,
+              tags:         m.tags || [],
               downloadedAt: m.downloadedAt || now,
               createdAt:    now,
             }
@@ -86,12 +90,21 @@ async function processMediaJob(job) {
       await Photo.bulkWrite(photoOps, { ordered: false });
     }
 
-    // Update gym document with resolved photo data
-    const coverPhoto = media.find(m => m?.localPath) || null;
+    // Sort by visual appeal score descending, pick the highest as cover
+    const validPhotos = media.filter(m => m?.localPath);
+    validPhotos.sort((a, b) => (b.appealScore || 0) - (a.appealScore || 0));
+    const coverPhoto = validPhotos[0] || null;
+
+    // Calculate overall visual appeal score for the gym
+    const visualAppealScore = validPhotos.length > 0 
+      ? Math.round(validPhotos.reduce((sum, p) => sum + (p.appealScore || 0), 0) / validPhotos.length) 
+      : 0;
+
     await Gym.findByIdAndUpdate(gymId, {
       $set: {
         photos:      media,
         coverPhoto,
+        visualAppealScore,
         totalPhotos: media.length,
         'crawlMeta.mediaStatus': failed > 0 ? 'partial' : 'completed',
         updatedAt:   now,
