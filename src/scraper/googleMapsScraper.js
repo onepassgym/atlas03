@@ -3,6 +3,7 @@ const { chromium } = require('playwright-extra');
 const stealthPlugin = require('puppeteer-extra-plugin-stealth');
 const cfg    = require('../../config');
 const logger = require('../utils/logger');
+const { scrapeWebsitePhotos } = require('./websiteScraper');
 
 // ── Activate stealth anti-detection ──────────────────────────────────────────
 chromium.use(stealthPlugin());
@@ -355,9 +356,9 @@ async function scrapeGymDetail(page, url, mode = 'standard') {
 
     // Photo URLs (visible on main page — hero images, no tab navigation needed)
     const photoUrls = [...new Set(
-      [...document.querySelectorAll('button[jsaction*="heroHeaderImage"] img, .RZ66Rb img, .Uf0tqf img')]
+      [...document.querySelectorAll('button[jsaction*="heroHeaderImage"] img, .RZ66Rb img, .Uf0tqf img, a[data-photo-index] img, [data-photo-index] img')]
         .map(img => img.src || img.dataset?.src)
-        .filter(src => src?.startsWith('http'))
+        .filter(src => src?.startsWith('http') && src.includes('googleusercontent') && !src.includes('StreetView'))
         .map(src => src.replace(/=w\d+-h\d+[^&]*/, '=w1600-h1200'))
     )];
 
@@ -404,7 +405,19 @@ async function scrapeGymDetail(page, url, mode = 'standard') {
 
   const mergedAmenities = [...new Set([...(core.amenities || []), ...(deepAmenities || [])])];
 
-  return { ...core, amenities: mergedAmenities, reviews, reviewSummary, photoUrls: allPhotos };
+  // ── Website Photos (Supplementary) ───────────────────────────────────────
+  if (core.website && mode !== 'fast') {
+    try {
+      const webPhotos = await scrapeWebsitePhotos(page, core.website);
+      if (webPhotos?.length > 0) {
+        allPhotos.push(...webPhotos);
+      }
+    } catch (e) {
+      logger.warn(`Failed to scrape website photos for ${core.name}: ${e.message}`);
+    }
+  }
+
+  return { ...core, amenities: mergedAmenities, reviews, reviewSummary, photoUrls: [...new Set(allPhotos)] };
 }
 
 // ── Scrape About Tab (Detailed Amenities & Accessibility) ──────────────────
@@ -525,11 +538,13 @@ async function scrapePhotosTab(page, existing = [], maxPhotos = 20) {
 
     let last = 0; let noNew = 0;
     while (urls.size < maxPhotos) {
-      const imgs = await page.locator('.Uf0tqf img, .RZ66Rb img, .U39Pmb img').all();
+      const imgs = await page.locator('.Uf0tqf img, .RZ66Rb img, .U39Pmb img, a[data-photo-index] img, [data-photo-index] img, img').all();
       for (const img of imgs) {
         try {
           const src = await img.getAttribute('src') || await img.getAttribute('data-src');
-          if (src?.startsWith('http')) urls.add(src.replace(/=w\d+-h\d+[^&]*/, '=w1600-h1200'));
+          if (src?.startsWith('http') && src.includes('googleusercontent') && !src.includes('StreetView')) {
+             urls.add(src.replace(/=w\d+-h\d+[^&]*/, '=w1600-h1200'));
+          }
         } catch (_) {}
       }
       if (urls.size === last) { if (++noNew >= 3) break; }
@@ -598,7 +613,7 @@ async function scrapeSelective(page, url, sections = ['all']) {
     }).filter(Boolean);
     const isOpenNow = (() => { const el = document.querySelector('.dpoVLd, [aria-label*="Open now" i]'); return el ? /open now/i.test(el.textContent) : null; })();
     const amenities = [...document.querySelectorAll('[aria-label].iP2t7d, .E0DTEd [aria-label]')].map(el => el.getAttribute('aria-label')).filter(Boolean);
-    const photoUrls = [...new Set([...document.querySelectorAll('button[jsaction*="heroHeaderImage"] img, .RZ66Rb img, .Uf0tqf img')].map(img => img.src || img.dataset?.src).filter(src => src?.startsWith('http')).map(src => src.replace(/=w\d+-h\d+[^&]*/, '=w1600-h1200')))];
+    const photoUrls = [...new Set([...document.querySelectorAll('button[jsaction*="heroHeaderImage"] img, .RZ66Rb img, .Uf0tqf img, a[data-photo-index] img, [data-photo-index] img')].map(img => img.src || img.dataset?.src).filter(src => src?.startsWith('http') && src.includes('googleusercontent') && !src.includes('StreetView')).map(src => src.replace(/=w\d+-h\d+[^&]*/, '=w1600-h1200')))];
     const urlMatch = window.location.href.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
     return {
       name, rating, totalReviews, address, phone, website, category, description,

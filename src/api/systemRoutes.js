@@ -115,6 +115,55 @@ router.get('/logs',
   }
 );
 
+// GET /api/system/media — lists all media files
+router.get('/media', async (req, res) => {
+  try {
+    const mediaPath = path.resolve(cfg.media.basePath);
+    try {
+      await fsp.access(mediaPath);
+    } catch {
+      return ok(res, { files: [], totalSize: 0, message: 'Media directory not found or empty' });
+    }
+    
+    const filesList = await fsp.readdir(mediaPath, { recursive: true });
+    let totalSize = 0;
+    
+    const files = await Promise.all(
+      filesList.map(async f => {
+        const fullPath = path.join(mediaPath, f);
+        try {
+          const stats = await fsp.stat(fullPath);
+          if (stats.isFile() && !f.startsWith('.') && !f.includes('/.')) {
+             totalSize += stats.size;
+             // Ensure URL is POSIX forward-slashed
+             const urlPath = f.split(path.sep).join('/');
+             return {
+               name: path.basename(f),
+               path: urlPath, // useful for full path reference
+               url: `/media/${urlPath}`,
+               size: stats.size,
+               createdAt: stats.mtimeMs
+             };
+          }
+        } catch (err) {
+          return null; // Ignore unreadable files
+        }
+        return null;
+      })
+    );
+    
+    const validFiles = files.filter(Boolean).sort((a, b) => b.createdAt - a.createdAt);
+    
+    ok(res, {
+      files: validFiles,
+      totalSize,
+      count: validFiles.length
+    });
+  } catch (e) {
+    err(res, e.message);
+  }
+});
+
 // GET /api/system/logs/latest — shortcut to tail the latest app log
 router.get('/logs/latest', async (req, res) => {
   try {

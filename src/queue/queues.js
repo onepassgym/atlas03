@@ -138,7 +138,8 @@ async function addBatchScrapeJob(parentJobId, cityName, urls, batchIndex, mode) 
 
 async function getQueueJobStatus(jobId) {
   try {
-    const job = await crawlQueue.getJob(jobId);
+    let job = await crawlQueue.getJob(jobId);
+    if (!job) job = await chainCrawlQueue.getJob(jobId);
     if (!job) return null;
     return { 
       id: job.id, 
@@ -152,6 +153,8 @@ async function getQueueJobStatus(jobId) {
 async function clearCrawlQueue() {
   await crawlQueue.pause();
   await crawlQueue.obliterate({ force: true });
+  await chainCrawlQueue.pause();
+  await chainCrawlQueue.obliterate({ force: true });
 }
 
 // ── Cancellation system (Redis-backed for fast polling) ──────────────────────
@@ -191,7 +194,8 @@ async function clearCancelFlag(jobId) {
 async function removeJobAndBatches(jobId) {
   try {
     // 1. Remove the main job
-    const mainJob = await crawlQueue.getJob(jobId);
+    let mainJob = await crawlQueue.getJob(jobId);
+    if (!mainJob) mainJob = await chainCrawlQueue.getJob(jobId);
     if (mainJob) await mainJob.remove().catch(() => {});
 
     // 2. Remove batches (predictable IDs: jobId:batch:N)
@@ -215,7 +219,8 @@ async function removeJobAndBatches(jobId) {
  */
 async function removeBullJob(jobId) {
   try {
-    const job = await crawlQueue.getJob(jobId);
+    let job = await crawlQueue.getJob(jobId);
+    if (!job) job = await chainCrawlQueue.getJob(jobId);
     if (!job) return false;
     await job.remove();
     return true;
@@ -229,7 +234,8 @@ async function removeBullJob(jobId) {
  */
 async function promoteJobToFront(jobId) {
   try {
-    const job = await crawlQueue.getJob(jobId);
+    let job = await crawlQueue.getJob(jobId);
+    if (!job) job = await chainCrawlQueue.getJob(jobId);
     if (!job) return 'not_found';
     const state = await job.getState();
     if (state === 'active') return 'already_active';

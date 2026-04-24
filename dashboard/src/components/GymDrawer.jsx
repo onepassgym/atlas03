@@ -385,6 +385,48 @@ export default function GymDrawer({ gymId, onClose }) {
                 )) : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No reviews available</span>}
               </div>
 
+              {/* ── Photo Gallery (AI Enriched) ──────────────────────────────────────────────── */}
+              {gym.photos && gym.photos.length > 0 && (
+                <div className="drawer-section">
+                  <div className="drawer-section-title">
+                    Media Gallery <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>({gym.photos.length})</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8, marginTop: 8 }}>
+                    {gym.photos.map((photo, i) => (
+                      <div key={i} style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', height: 120, background: '#1f2937' }}>
+                        <img 
+                          src={photo.thumbnailUrl || photo.url} 
+                          alt="Gym" 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          loading="lazy"
+                        />
+                        {/* Overlay for AI metadata */}
+                        <div style={{
+                          position: 'absolute', bottom: 0, left: 0, right: 0, 
+                          background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)',
+                          padding: '20px 8px 6px', display: 'flex', flexDirection: 'column', gap: 4
+                        }}>
+                          {photo.appealScore > 0 && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--success)' }}>
+                              ⚡ {photo.appealScore}/100
+                            </span>
+                          )}
+                          {(photo.tags && photo.tags.length > 0) && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                              {photo.tags.slice(0, 2).map((tag, ti) => (
+                                <span key={ti} style={{ fontSize: 8, padding: '2px 4px', background: 'rgba(255,255,255,0.2)', borderRadius: 4, color: '#fff' }}>
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div style={{ marginTop: 16, fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>ID: {gym._id}</div>
             </>
           )}

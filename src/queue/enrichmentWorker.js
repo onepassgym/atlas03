@@ -19,6 +19,7 @@ const { connectDB } = require('../db/connection');
 const Gym = require('../db/gymModel');
 const EnrichmentLog = require('../db/enrichmentLogModel');
 const { BrowserManager, scrapeGymDetail, scrapeSelective } = require('../scraper/googleMapsScraper');
+const { scrapeWebsitePhotos } = require('../scraper/websiteScraper');
 const { processGym } = require('../scraper/gymProcessor');
 const {
   isPaused,
@@ -116,6 +117,19 @@ async function enrichGym(browser, gym, source, sections = ['all']) {
 
     if (!scraped?.name) {
       throw new Error('Could not extract gym data from page');
+    }
+
+    // ── Multi-Source Data Fusion: Extract supplementary photos from official website
+    const websiteUrl = scraped.website || gym.contact?.website;
+    if (websiteUrl && sections.includes('photos') || sections.includes('all')) {
+      try {
+        const websitePhotos = await scrapeWebsitePhotos(page, websiteUrl);
+        if (websitePhotos && websitePhotos.length > 0) {
+          scraped.photoUrls = [...new Set([...(scraped.photoUrls || []), ...websitePhotos])];
+        }
+      } catch (siteErr) {
+        logger.warn(`  ⚠ Failed to extract supplementary photos from ${websiteUrl}: ${siteErr.message}`);
+      }
     }
 
     // Process and upsert the enriched data

@@ -15,6 +15,8 @@ const GlobePage = lazy(() => import('./pages/GlobePage'));
 const System    = lazy(() => import('./pages/System'));
 const Enrichment = lazy(() => import('./pages/Enrichment'));
 const DataHealth = lazy(() => import('./pages/DataHealth'));
+const Simulations = lazy(() => import('./pages/SimulationsPage'));
+const MediaStorage = lazy(() => import('./pages/MediaStorage'));
 
 function PageLoader() {
   return (
@@ -42,6 +44,8 @@ function AppShell() {
           <Route path="/system"   element={<System />} />
           <Route path="/enrichment" element={<Enrichment />} />
           <Route path="/data-health" element={<DataHealth />} />
+          <Route path="/media"       element={<MediaStorage />} />
+          <Route path="/simulations" element={<Simulations />} />
           <Route path="*"         element={<Navigate to="/overview" replace />} />
         </Routes>
       </Suspense>

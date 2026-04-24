@@ -1,25 +1,17 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import createGlobe from 'cobe';
-import { MapPin, Dumbbell, Building2, Globe2, ArrowRight, Maximize2, Minimize2, Search, Play, Pause } from 'lucide-react';
+import { MapPin, Dumbbell, Building2, Globe2, ArrowRight, Maximize2, Minimize2, Search, Play, Pause, Map as MapIcon, Layers, Target, Activity } from 'lucide-react';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 
-// ── Fallback Base City Markers ────────────────────────────────────────────────
+// ── Initial Marker (just one to avoid empty state flash) ───────────────────────
 const BASE_MARKERS = [
-  { name: 'Mumbai',     coords: [19.076, 72.878],  size: 0.10 },
-  { name: 'Delhi',      coords: [28.704, 77.103],  size: 0.10 },
-  { name: 'Bengaluru',  coords: [12.972, 77.595],  size: 0.08 },
-  { name: 'Hyderabad',  coords: [17.385, 78.487],  size: 0.07 },
-  { name: 'Chennai',    coords: [13.083, 80.271],  size: 0.07 },
-  { name: 'Kolkata',    coords: [22.573, 88.364],  size: 0.06 },
-  { name: 'Pune',       coords: [18.520, 73.857],  size: 0.06 },
-  { name: 'Ahmedabad',  coords: [23.023, 72.571],  size: 0.05 },
-  { name: 'Jaipur',     coords: [26.913, 75.787],  size: 0.05 },
+  { name: 'Mumbai', coords: [19.076, 72.878], size: 0.10 },
 ];
 
 export default function GlobePage() {
-  const { theme, toast } = useApp();
+  const { theme, toast, events } = useApp();
   const canvasRef = useRef(null);
   const pointerDown = useRef(false);
   const pointerDeltaRef = useRef({ x: 0, y: 0 });
@@ -57,33 +49,41 @@ export default function GlobePage() {
     return null;
   };
 
-  // Fetch overview stats and dynamically geocode missing top cities
+  // Fetch overview stats and populate markers from accurate DB coordinates
   useEffect(() => {
-    api.get('/api/gyms/stats').then(async res => {
-      if (res?.success) {
+    api.get('/api/gyms/stats').then(res => {
+      if (res?.success && res.stats?.topCities) {
         setStats(res.stats);
+        
         const lookup = {};
-        const missingCities = [];
+        const newMarkers = [];
+        
+        // Find max count to normalize sizes
+        let maxCount = 1;
+        res.stats.topCities.forEach(c => { if (c.count > maxCount) maxCount = c.count; });
 
-        (res.stats.topCities || []).forEach(c => {
-          lookup[c._id?.toLowerCase()] = c.count;
-          if (!dynamicMarkers.some(m => m.name.toLowerCase() === c._id.toLowerCase())) {
-             missingCities.push(c._id);
+        res.stats.topCities.forEach(c => {
+          if (!c._id) return;
+          lookup[c._id.toLowerCase()] = c.count;
+          
+          if (c.lat && c.lng) {
+            // Size normalizes between 0.04 and 0.12 based on log scale
+            const size = 0.04 + (Math.log(c.count + 1) / Math.log(maxCount + 1)) * 0.08;
+            newMarkers.push({
+              name: c._id,
+              coords: [c.lat, c.lng],
+              size,
+              count: c.count
+            });
           }
         });
+        
         setCityStats(lookup);
-
-        // Fetch coords for up to 5 missing top cities to avoid rate limits
-        const toGeocode = missingCities.slice(0, 5);
-        if (toGeocode.length > 0) {
-          const newMarkers = [];
-          for (const city of toGeocode) {
-            const coords = await geocodeCity(city);
-            if (coords) newMarkers.push({ name: city, coords, size: 0.05 });
-            await new Promise(r => setTimeout(r, 600)); // Respect Nominatim limits
-          }
-          if (newMarkers.length > 0) {
-            setDynamicMarkers(prev => [...prev, ...newMarkers]);
+        if (newMarkers.length > 0) {
+          setDynamicMarkers(newMarkers);
+          // Make the initial globe pointer/focus dynamic based on the top city in DB
+          if (!focusRef.current && newMarkers[0]?.coords) {
+            focusRef.current = newMarkers[0].coords;
           }
         }
       }
@@ -136,8 +136,8 @@ export default function GlobePage() {
           // Animate to focus city
           else if (focusRef.current) {
             const [lat, lng] = focusRef.current;
-            // Cobe angle mapping approximation
-            const targetPhi = (lng * Math.PI) / 180 + Math.PI; 
+            // Accurate Cobe camera mapping for lat/lng centering
+            const targetPhi = Math.PI - (lng * Math.PI) / 180;
             const targetTheta = (lat * Math.PI) / 180;
             
             // Normalize phi difference to take the shortest path
@@ -145,10 +145,10 @@ export default function GlobePage() {
             while (dPhi > Math.PI) dPhi -= 2 * Math.PI;
             while (dPhi < -Math.PI) dPhi += 2 * Math.PI;
 
-            currentPhi += dPhi * 0.06;
-            currentTheta += (targetTheta - currentTheta) * 0.06;
+            currentPhi += dPhi * 0.08;
+            currentTheta += (targetTheta - currentTheta) * 0.08;
 
-            if (Math.abs(dPhi) < 0.01 && Math.abs(targetTheta - currentTheta) < 0.01) {
+            if (Math.abs(dPhi) < 0.005 && Math.abs(targetTheta - currentTheta) < 0.005) {
                focusRef.current = null; // Reached target
             }
           } 
@@ -341,139 +341,216 @@ export default function GlobePage() {
           />
 
           {/* ── Pause & Fullscreen buttons ── */}
-          <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 5, display: 'flex', gap: 8 }}>
+          <div style={{ position: 'absolute', top: 24, right: 24, zIndex: 5, display: 'flex', gap: 12 }}>
             <button
               onClick={togglePause}
               className="btn sm"
+              style={{ background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--accent)' }}
             >
-              {isPaused ? <Play size={14} /> : <Pause size={14} />}
+              {isPaused ? <Play size={16} /> : <Pause size={16} />}
             </button>
             <button
               onClick={toggleFullscreen}
               className="btn sm"
+              style={{ background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--accent)' }}
             >
-              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
+          </div>
+
+          {/* ── HUD Crosshairs ── */}
+          <div style={{ position: 'absolute', pointerEvents: 'none', top: '50%', left: '50%', width: 400, height: 400, transform: 'translate(-50%, -50%)', border: '1px dashed rgba(139, 92, 246, 0.15)', borderRadius: '50%' }} />
+          <div style={{ position: 'absolute', pointerEvents: 'none', top: '50%', left: '50%', width: 20, height: 20, transform: 'translate(-50%, -50%)' }}>
+             <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: 1, background: 'rgba(139, 92, 246, 0.5)' }} />
+             <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: 1, background: 'rgba(139, 92, 246, 0.5)' }} />
+          </div>
+
+          {/* ── Live Animated Events Overlay ── */}
+          <div style={{ position: 'absolute', bottom: 100, left: 32, width: 300, pointerEvents: 'none', zIndex: 10 }}>
+            <AnimatePresence>
+              {events.filter(e => !e.type?.startsWith('system:')).slice(0, 3).map((e, i) => (
+                <motion.div
+                  key={`${e.timestamp}-${i}`}
+                  initial={{ opacity: 0, x: -50, scale: 0.9 }}
+                  animate={{ opacity: 1 - (i * 0.25), x: 0, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                  style={{
+                    background: 'rgba(15, 23, 42, 0.75)',
+                    backdropFilter: 'blur(12px)',
+                    border: '1px solid rgba(139, 92, 246, 0.3)',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    marginBottom: 8,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10
+                  }}
+                >
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', boxShadow: '0 0 8px var(--success)' }} />
+                  <div style={{ flex: 1, overflow: 'hidden' }}>
+                    <div style={{ fontSize: 10, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, fontFamily: 'var(--mono)' }}>
+                      {e.type.replace('crawl:', '').replace('gym:', '').replace('job:', '')}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {e.data?.gymName || e.data?.cityName || e.data?.name || 'Processing...'}
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
 
           {/* ── Center label ── */}
           <div style={{
-            position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+            position: 'absolute', bottom: 32, left: '50%', transform: 'translateX(-50%)',
             textAlign: 'center', pointerEvents: 'none',
+            background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(12px)',
+            padding: '8px 16px', borderRadius: 20, border: '1px solid rgba(139, 92, 246, 0.2)',
+            boxShadow: '0 0 20px rgba(139, 92, 246, 0.15)'
           }}>
             <div style={{
-              fontSize: 11, color: 'var(--text-muted)', fontWeight: 600,
+              fontSize: 10, color: 'var(--accent)', fontWeight: 700,
               textTransform: 'uppercase', letterSpacing: 2,
-              fontFamily: 'var(--mono)',
+              fontFamily: 'var(--mono)', display: 'flex', alignItems: 'center', gap: 6
             }}>
-              Drag to explore · Click a city to focus
+              <span className="live-dot" /> SATELLITE LINK ACTIVE
             </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Drag to explore · Click city to pinpoint</div>
           </div>
         </div>
 
-        {/* ── Sidebar ────── */}
+        {/* ── Sidebar HUD ────── */}
         <div style={{
-          borderLeft: '1px solid var(--border)',
-          background: 'var(--bg-card)',
-          backdropFilter: 'blur(16px)',
-          padding: 24,
+          borderLeft: '1px solid rgba(255,255,255,0.05)',
+          background: 'linear-gradient(135deg, rgba(15,23,42,0.9) 0%, rgba(15,23,42,0.7) 100%)',
+          backdropFilter: 'blur(20px)',
+          padding: '32px 24px',
           overflowY: 'auto',
-          display: 'flex', flexDirection: 'column', gap: 20,
+          display: 'flex', flexDirection: 'column', gap: 24,
+          boxShadow: '-10px 0 30px rgba(0,0,0,0.5)',
+          position: 'relative', zIndex: 10
         }}>
+          {/* Decorative HUD Lines */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.5 }} />
+
           {/* Title */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-              <Globe2 size={22} style={{ color: 'var(--accent)' }} />
-              <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.5, margin: 0 }}>
-                Global Coverage
-              </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <div style={{ padding: 8, background: 'rgba(139, 92, 246, 0.15)', borderRadius: 12, border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+                <Globe2 size={24} style={{ color: 'var(--accent)' }} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, margin: 0, color: '#fff', textShadow: '0 0 20px rgba(139,92,246,0.4)' }}>
+                  ATLAS COMMAND
+                </h2>
+                <div style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>Global Reconnaissance</div>
+              </div>
             </div>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              Interactive visualization of gym venues indexed by Atlas06. 
-            </p>
           </div>
 
           {/* Quick Stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <StatBox icon={<Building2 size={16} />} label="Total Gyms" value={totalGyms} color="var(--accent)" />
-            <StatBox icon={<MapPin size={16} />} label="Cities" value={totalCities} color="var(--purple)" />
-            <StatBox icon={<Dumbbell size={16} />} label="Reviews" value={totalReviews} color="var(--success)" />
-            <StatBox icon={<Search size={16} />} label="Markers" value={dynamicMarkers.length} color="var(--cyan)" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <StatBox icon={<Building2 size={16} />} label="Total Gyms" value={totalGyms} color="#3b82f6" />
+            <StatBox icon={<MapPin size={16} />} label="Cities" value={totalCities} color="#8b5cf6" />
+            <StatBox icon={<Dumbbell size={16} />} label="Reviews" value={totalReviews} color="#10b981" />
+            <StatBox icon={<Search size={16} />} label="Nodes" value={dynamicMarkers.length} color="#06b6d4" />
           </div>
 
           {/* Add New City Form */}
           <form onSubmit={handleCrawlCity} style={{ 
-            display: 'flex', gap: 8, padding: 12, 
-            background: 'var(--bg-surface)', borderRadius: 'var(--radius)',
-            border: '1px solid var(--border)' 
+            display: 'flex', gap: 8, padding: 4, 
+            background: 'rgba(0,0,0,0.3)', borderRadius: 12,
+            border: '1px solid rgba(255,255,255,0.05)',
+            boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.2)'
           }}>
              <input 
                type="text" 
                className="input" 
-               placeholder="Add city to crawl..." 
+               placeholder="Deploy scraper to new city..." 
                value={newCityName}
                onChange={e => setNewCityName(e.target.value)}
                disabled={isGeocoding}
-               style={{ flex: 1, background: 'transparent', border: 'none', padding: 4 }}
+               style={{ flex: 1, background: 'transparent', border: 'none', padding: '8px 12px', fontSize: 13, color: '#fff', outline: 'none' }}
              />
-             <button type="submit" className="btn primary sm" disabled={!newCityName.trim() || isGeocoding} style={{ padding: '6px 12px' }}>
-                <Play size={12} fill="currentColor" />
+             <button type="submit" className="btn accent" disabled={!newCityName.trim() || isGeocoding} style={{ padding: '8px 16px', borderRadius: 8, fontWeight: 700 }}>
+                {isGeocoding ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }}/> : <Play size={14} fill="currentColor" />}
              </button>
           </form>
 
           {/* City List */}
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <div style={{
-              fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2,
-              color: 'var(--text-muted)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2,
+              color: 'var(--text-muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12,
             }}>
-              Tracked Cities
-              <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              Active Nodes
+              <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(255,255,255,0.1), transparent)' }} />
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, paddingRight: 4 }}>
+            <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, paddingRight: 8 }}>
               <AnimatePresence>
               {sortedMarkers.map((city, i) => {
                 const count = cityStats[city.name?.toLowerCase()] || 0;
                 const isHovered = hoveredCity === city.name;
+                const isQueued = city.isQueued;
+                const color = isQueued ? '#f59e0b' : (count > 100 ? '#8b5cf6' : count > 30 ? '#10b981' : count > 0 ? '#3b82f6' : '#64748b');
+                
                 return (
                   <motion.div
                     key={city.name}
-                    initial={{ opacity: 0, x: -10 }}
+                    initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.02, duration: 0.2 }}
+                    transition={{ delay: i * 0.03, duration: 0.3 }}
                     onHoverStart={() => setHoveredCity(city.name)}
                     onHoverEnd={() => setHoveredCity(null)}
                     onClick={() => handleCityClick(city)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '8px 12px', borderRadius: 'var(--radius-sm)',
-                      background: isHovered ? 'var(--row-hover)' : 'transparent',
-                      cursor: 'pointer', transition: 'background 0.15s',
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '10px 14px', borderRadius: 10,
+                      background: isHovered ? 'rgba(255,255,255,0.05)' : 'transparent',
+                      border: `1px solid ${isHovered ? 'rgba(255,255,255,0.1)' : 'transparent'}`,
+                      cursor: 'pointer', transition: 'all 0.2s',
                     }}
                   >
-                    <div style={{
-                      width: 8, height: 8, borderRadius: '50%',
-                      background: city.isQueued ? '#f97316' : (count > 100 ? 'var(--accent)' : count > 30 ? 'var(--success)' : count > 0 ? 'var(--warning)' : 'var(--text-muted)'),
-                      boxShadow: isHovered ? `0 0 8px ${city.isQueued ? '#f97316' : count > 100 ? 'var(--accent)' : 'var(--success)'}` : 'none',
-                      transition: 'box-shadow 0.2s',
-                    }} />
-                    <span style={{ 
-                      flex: 1, fontSize: 13, fontWeight: city.isQueued ? 700 : 500,
-                      color: city.isQueued ? '#f97316' : 'inherit'
-                    }}>
-                      {city.name} {city.isQueued && <span style={{ fontSize: 10, opacity: 0.8, fontWeight: 500, marginLeft: 4 }}>(Queued)</span>}
-                    </span>
-                    <span style={{
-                      fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text-muted)',
-                      fontWeight: 600,
-                    }}>
-                      {count > 0 ? count.toLocaleString() : '—'}
-                    </span>
-                    <ArrowRight size={12} style={{
-                      color: 'var(--text-muted)', opacity: isHovered ? 1 : 0,
-                      transition: 'opacity 0.2s',
-                      transform: isHovered ? 'translateX(0)' : 'translateX(-4px)'
-                    }} />
+                    <div style={{ position: 'relative', width: 10, height: 10 }}>
+                      <div style={{
+                        position: 'absolute', inset: 0, borderRadius: '50%', background: color,
+                        boxShadow: `0 0 10px ${color}`, opacity: isHovered ? 1 : 0.7
+                      }} />
+                      {isQueued && (
+                        <motion.div
+                          animate={{ scale: [1, 2], opacity: [0.8, 0] }}
+                          transition={{ repeat: Infinity, duration: 1.5 }}
+                          style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: color }}
+                        />
+                      )}
+                    </div>
+                    
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ 
+                        fontSize: 14, fontWeight: isQueued ? 700 : 600,
+                        color: isHovered ? '#fff' : 'var(--text-primary)',
+                        transition: 'color 0.2s'
+                      }}>
+                        {city.name}
+                      </span>
+                      {isQueued && <span style={{ fontSize: 9, color: color, textTransform: 'uppercase', letterSpacing: 1 }}>Locating...</span>}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        fontSize: 13, fontFamily: 'var(--mono)', color: isHovered ? color : 'var(--text-muted)',
+                        fontWeight: 700, transition: 'color 0.2s'
+                      }}>
+                        {count > 0 ? count.toLocaleString() : '—'}
+                      </span>
+                      <MapPin size={14} style={{
+                        color: color, opacity: isHovered ? 1 : 0,
+                        transition: 'opacity 0.2s, transform 0.2s',
+                        transform: isHovered ? 'translateY(-2px)' : 'translateY(0)'
+                      }} />
+                    </div>
                   </motion.div>
                 );
               })}
@@ -490,6 +567,20 @@ export default function GlobePage() {
             grid-template-columns: 1fr !important;
           }
         }
+        .live-dot {
+          width: 6px; height: 6px; background: var(--success); border-radius: 50%;
+          box-shadow: 0 0 8px var(--success);
+          animation: pulse-dot 2s infinite;
+        }
+        @keyframes pulse-dot {
+          0% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(1.2); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.3); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.6); }
       `}</style>
     </motion.div>
   );
@@ -498,23 +589,24 @@ export default function GlobePage() {
 function StatBox({ icon, label, value, color }) {
   return (
     <motion.div
-      whileHover={{ y: -2, borderColor: color, boxShadow: `0 4px 12px ${color}15` }}
+      whileHover={{ y: -2, borderColor: color, boxShadow: `0 8px 24px ${color}20` }}
       style={{
-        padding: '14px 16px', borderRadius: 'var(--radius)',
-        border: '1px solid var(--border)', 
-        background: 'linear-gradient(180deg, var(--bg-card) 0%, var(--bg-surface) 100%)',
-        transition: 'all 0.2s ease',
+        padding: '16px', borderRadius: 16,
+        border: '1px solid rgba(255,255,255,0.05)', 
+        background: 'rgba(0,0,0,0.2)',
+        backdropFilter: 'blur(10px)',
+        transition: 'all 0.3s ease',
         cursor: 'default',
         position: 'relative', overflow: 'hidden'
       }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${color}60, transparent)` }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, color }}>
-        {icon}
-        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: 'var(--text-muted)' }}>{label}</span>
+      <div style={{ position: 'absolute', top: 0, left: 0, width: 2, height: '100%', background: color, opacity: 0.8, boxShadow: `0 0 10px ${color}` }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color }}>
+        <div style={{ padding: 4, background: `${color}15`, borderRadius: 6 }}>{icon}</div>
+        <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)' }}>{label}</span>
       </div>
       <div style={{
-        fontSize: 24, fontWeight: 800, color: 'var(--text-primary)',
-        fontVariantNumeric: 'tabular-nums',
+        fontSize: 26, fontWeight: 900, color: '#fff',
+        fontVariantNumeric: 'tabular-nums', textShadow: '0 2px 10px rgba(0,0,0,0.3)'
       }}>
         {typeof value === 'number' ? value.toLocaleString() : value}
       </div>

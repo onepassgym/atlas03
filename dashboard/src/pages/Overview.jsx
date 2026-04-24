@@ -33,6 +33,7 @@ export default function Overview() {
   const { events, setChainsCache, crawlActivity } = useApp();
   const [stats, setStats] = useState(null);
   const [queueStats, setQueueStats] = useState(null);
+  const [mediaQueueStats, setMediaQueueStats] = useState(null);
   const [chainStats, setChainStats] = useState({ count: 0, totalLocs: 0 });
   const [latestGyms, setLatestGyms] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -50,7 +51,10 @@ export default function Overview() {
       ]);
 
       if (gymRes?.success) setStats(gymRes.stats);
-      if (queueRes?.success) setQueueStats(queueRes.queue);
+      if (queueRes?.success) {
+        setQueueStats(queueRes.queue);
+        setMediaQueueStats(queueRes.mediaQueue);
+      }
       if (chainRes?.chains) {
         setChainsCache(chainRes.chains);
         const totalLocs = chainRes.chains.reduce((s, c) => s + (c.totalLocations || 0), 0);
@@ -87,36 +91,62 @@ export default function Overview() {
   const throttleColor = crawlActivity.throttle <= 1.0 ? 'green' : crawlActivity.throttle <= 2.0 ? 'yellow' : 'red';
   const throttleLabel = crawlActivity.throttle <= 0.85 ? 'Cruising' : crawlActivity.throttle <= 1.1 ? 'Normal' : crawlActivity.throttle <= 2.0 ? 'Caution' : 'Throttled';
 
-  // Count today's events
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-  const todayEvents = events.filter(e => new Date(e.timestamp) >= todayStart);
-  const todayCreated = todayEvents.filter(e => e.type === 'gym:created').length;
-  const todayUpdated = todayEvents.filter(e => e.type === 'gym:updated').length;
-  const todayFailed = todayEvents.filter(e => e.type === 'crawl:gym-failed').length;
-
   return (
     <motion.div className="container" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-      {/* ── Live Crawler Activity ────── */}
-      <CrawlActivity />
-
-      {/* ── Enrichment Engine ────── */}
-      <EnrichmentPanel />
+      {/* ── Command Center Header ────── */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(15,23,42,0.8) 0%, rgba(15,23,42,0.4) 100%)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid rgba(139, 92, 246, 0.2)',
+        borderRadius: 16,
+        padding: '24px 30px',
+        marginBottom: 20,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+        position: 'relative',
+        overflow: 'hidden'
+      }}>
+        {/* Decorative Grid Background */}
+        <div style={{ position: 'absolute', inset: 0, opacity: 0.1, backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '20px 20px', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)' }} />
+        
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ padding: 12, background: 'rgba(139, 92, 246, 0.15)', borderRadius: 12, border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+            <Target size={28} style={{ color: 'var(--accent)' }} />
+          </div>
+          <div>
+            <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0, letterSpacing: '-0.5px', color: '#fff', textShadow: '0 0 20px rgba(139,92,246,0.5)' }}>
+              ATLAS INTELLIGENCE COMMAND
+            </h1>
+            <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700, letterSpacing: 3, textTransform: 'uppercase', fontFamily: 'var(--mono)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="live-dot" style={{ width: 6, height: 6, background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 8px var(--success)', animation: 'pulse-dot 2s infinite' }} />
+              System Online & Processing
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* ── Stat Cards ────── */}
-      <div className="grid" style={{ marginTop: 14 }}>
+      <div className="grid">
         <StatCard title="Total Gyms" value={stats?.total} label="venues in database" icon={<Building2 size={18} />} color="blue" />
-        <StatCard title="Total Reviews" value={stats?.totalReviews} label="aggregated insights" icon={<MessageCircle size={18} />} color="purple" />
         <StatCard title="Total Photos" value={stats?.totalPhotos} label="venue images" icon={<Camera size={18} />} color="orange" />
-        <StatCard title="Queue Status" value={queueStats?.active ?? 0} label={`${queueStats?.waiting || 0} waiting`} icon={<Zap size={18} />} color="cyan" />
+        <StatCard title="Crawl Queue" value={queueStats?.active ?? 0} label={`${queueStats?.waiting || 0} waiting`} icon={<Zap size={18} />} color="cyan" />
+        <StatCard title="Photo Queue" value={mediaQueueStats?.active ?? 0} label={`${mediaQueueStats?.waiting || 0} downloading`} icon={<Camera size={18} />} color="indigo" />
         <StatCard title="Crawl Health" value={crawlActivity.throttle.toFixed(1)} label={throttleLabel} sublabel={crawlActivity.status} icon={<Activity size={18} />} color={throttleColor} />
-        <StatCard title="Today" value={todayCreated + todayUpdated} label={`✅${todayCreated} new · 🔄${todayUpdated} upd · ❌${todayFailed} fail`} icon={<TrendingUp size={18} />} color="green" />
+        <StatCard 
+          title="Today's Activity" 
+          value={(stats?.todayStats?.created || 0) + (stats?.todayStats?.updated || 0)} 
+          label={`${stats?.todayStats?.created || 0} New Venues`} 
+          sublabel={`${stats?.todayStats?.updated || 0} Updated`} 
+          icon={<TrendingUp size={18} />} 
+          color="green" 
+        />
       </div>
 
       {/* ── Charts ────── */}
       <div className="grid-2" style={{ marginTop: 8 }}>
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Top Geographies</span>
+        <div className="card" style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 16 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Building2 size={16} color="var(--accent)" /> Top Geographies</span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>
               {cityData.reduce((s, c) => s + c.count, 0)} total
             </span>
@@ -184,8 +214,10 @@ export default function Overview() {
           })() : <div className="empty-state">No city data</div>}
         </div>
 
-        <div className="card">
-          <div className="card-header"><span className="card-title">Categories</span><span className="card-icon">📊</span></div>
+        <div className="card" style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 16 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Activity size={16} color="var(--accent)" /> Categories</span>
+          </div>
           {catData.length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
@@ -202,8 +234,10 @@ export default function Overview() {
 
       {/* ── Latest Gyms + Jobs ────── */}
       <div className="grid-2" style={{ marginTop: 8 }}>
-        <div className="card">
-          <div className="card-header"><span className="card-title">Latest Venues</span><span className="card-icon">🆕</span></div>
+        <div className="card" style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 12 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Link2 size={16} color="var(--success)" /> Latest Venues</span>
+          </div>
           <div style={{ maxHeight: 280, overflowY: 'auto' }}>
             {latestGyms.length > 0 ? latestGyms.map(g => (
               <GymRow key={g._id} gym={g} onClick={setSelectedGym} />
@@ -211,8 +245,10 @@ export default function Overview() {
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-header"><span className="card-title">Active & Recent Jobs</span><span className="card-icon">📋</span></div>
+        <div className="card" style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 12 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Zap size={16} color="var(--warning)" /> Active & Recent Jobs</span>
+          </div>
           <div style={{ maxHeight: 300, overflowY: 'auto' }}>
             {jobs.length > 0 ? jobs.map(j => {
               const p = j.progress || {};
@@ -252,10 +288,18 @@ export default function Overview() {
         </div>
       </div>
 
+      {/* ── System Activity (Live Crawler & Enrichment) ────── */}
+      <div className="grid-2" style={{ marginTop: 8 }}>
+        {(crawlActivity.status !== 'idle' || crawlActivity.recentActions.length > 0) && (
+          <CrawlActivity />
+        )}
+        <EnrichmentPanel />
+      </div>
+
       {/* ── Event Feed ────── */}
-      <div className="card" style={{ marginTop: 8 }}>
-        <div className="card-header">
-          <span className="card-title">Live Event Feed</span>
+      <div className="card" style={{ marginTop: 8, background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 16 }}>
+          <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><MessageCircle size={16} color="var(--accent)" /> Live Event Feed</span>
           <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>{events.length} events</span>
         </div>
         <EventFeed />

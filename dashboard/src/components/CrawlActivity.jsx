@@ -280,24 +280,27 @@ export default function CrawlActivity() {
 
   return (
     <motion.div
-      className="card"
+      className="card crawl-activity-card"
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
-      style={{ overflow: 'hidden' }}
+      style={{ 
+        background: 'rgba(30, 41, 59, 0.4)', 
+        border: '1px solid rgba(255,255,255,0.05)',
+        overflow: 'hidden',
+        position: 'relative'
+      }}
     >
       {/* ── Header ── */}
-      <div className="card-header" style={{ paddingBottom: 14 }}>
-        <span className="card-title">Live Crawler Activity</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {cfg.pulse && (
-            <motion.div
-              animate={{ opacity: [1, 0.3, 1] }}
-              transition={{ duration: 1.2, repeat: Infinity }}
-              style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.color }}
-            />
-          )}
-          <span style={{ fontSize: 12, fontWeight: 700, color: cfg.color }}>{cfg.label}</span>
+      <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <StatusIcon />
+          <div>
+            <span className="card-title" style={{ color: 'var(--text-primary)', marginBottom: 2, display: 'block' }}>Live Activity</span>
+            <div style={{ fontSize: 11, color: activeConfig.color, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' }}>
+              {activeConfig.label}
+            </div>
+          </div>
         </div>
       </div>
 

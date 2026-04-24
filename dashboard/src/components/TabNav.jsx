@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Search, Link2, ClipboardList, Settings, Globe2, Zap, HeartPulse } from 'lucide-react';
+import { LayoutDashboard, Search, Link2, ClipboardList, Settings, Globe2, Zap, HeartPulse, Gamepad2, Image as ImageIcon } from 'lucide-react';
 
 const tabs = [
   { to: '/overview',     icon: LayoutDashboard, label: 'Overview' },
@@ -9,6 +9,8 @@ const tabs = [
   { to: '/chains',       icon: Link2,           label: 'Chains', badgeId: 'chainCount' },
   { to: '/jobs',         icon: ClipboardList,   label: 'Jobs' },
   { to: '/globe',        icon: Globe2,          label: 'Globe' },
+  { to: '/media',        icon: ImageIcon,       label: 'Media' },
+  { to: '/simulations',  icon: Gamepad2,        label: 'Simulations' },
   { to: '/system',       icon: Settings,        label: 'System' },
 ];
 
