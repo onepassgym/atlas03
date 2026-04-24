@@ -162,10 +162,12 @@ export function AppProvider({ children }) {
 
   // Load event history on mount
   useEffect(() => {
-    api.get('/api/events/history?limit=30')
+    api.get('/api/events/history?limit=150')
       .then(res => {
         if (res?.success && res.events?.length) {
-          setEvents(res.events.reverse());
+          const all = res.events.reverse();
+          setEvents(all.filter(e => e.type !== 'system:log'));
+          setLogs(all.filter(e => e.type === 'system:log').map(e => e.data));
         }
       })
       .catch(() => {});

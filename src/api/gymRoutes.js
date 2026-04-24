@@ -2,7 +2,8 @@
 const express = require('express');
 const { query, param, validationResult } = require('express-validator');
 const router  = express.Router();
-const Gym     = require('../db/gymModel');
+const Gym   = require('../db/gymModel');
+const Photo = require('../db/photoModel');
 
 const { ok, err, validate } = require('../utils/apiUtils');
 
@@ -371,7 +372,10 @@ router.get('/nearby',
 // GET /api/gyms/stats
 router.get('/stats', async (_, res) => {
   try {
-    const [total, byCategory, topCities, globalStats] = await Promise.all([
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [total, byCategory, topCities, globalStats, todayCreated, todayUpdated] = await Promise.all([
       Gym.countDocuments(),
       Gym.aggregate([
         { $group: { _id: '$categoryId', count: { $sum: 1 } } },
@@ -381,10 +385,15 @@ router.get('/stats', async (_, res) => {
         { $sort: { count: -1 } }
       ]),
       Gym.aggregate([
-        { $match: { areaName: { $ne: null } } },
-        { $group: { _id: '$areaName', count: { $sum: 1 } } }, 
+        { $match: { areaName: { $ne: null }, lat: { $ne: null }, lng: { $ne: null } } },
+        { $group: { 
+            _id: '$areaName', 
+            count: { $sum: 1 },
+            lat: { $avg: '$lat' },
+            lng: { $avg: '$lng' }
+        } }, 
         { $sort: { count: -1 } }, 
-        { $limit: 10 }
+        { $limit: 100 }
       ]),
       Gym.aggregate([
         { 
@@ -398,6 +407,8 @@ router.get('/stats', async (_, res) => {
           } 
         }
       ]),
+      Gym.countDocuments({ createdAt: { $gte: todayStart } }),
+      Gym.countDocuments({ updatedAt: { $gte: todayStart } })
     ]);
 
     ok(res, { stats: { 
@@ -409,7 +420,11 @@ router.get('/stats', async (_, res) => {
       averageSentiment: globalStats[0]?.avgSentiment?.toFixed(2) || '0.00',
       totalReviews: globalStats[0]?.totalReviews || 0,
       totalPhotos: globalStats[0]?.totalPhotos || 0,
-      cityCount: topCities.length
+      cityCount: topCities.length,
+      todayStats: {
+        created: todayCreated,
+        updated: todayUpdated
+      }
     } });
   } catch (e) { err(res, e.message); }
 });
@@ -467,6 +482,26 @@ router.get('/export', async (req, res) => {
  *       404:
  *         description: Gym not found
  */
+// GET /api/gyms/photos — paginated photo library (MUST be before /:id)
+router.get('/photos', async (req, res) => {
+  try {
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(200, parseInt(req.query.limit) || 60);
+    const skip  = (page - 1) * limit;
+    const type  = req.query.type  || null;
+    const gymId = req.query.gymId || null;
+    const filter = {};
+    if (type)  filter.type  = type;
+    if (gymId) filter.gymId = gymId;
+    const [photos, total] = await Promise.all([
+      Photo.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('gymId', 'name areaName').lean(),
+      Photo.countDocuments(filter),
+    ]);
+    const totalSize = photos.reduce((sum, p) => sum + (p.sizeBytes || 0), 0);
+    ok(res, { photos, pagination: { page, limit, total, pages: Math.ceil(total / limit) }, totalSize });
+  } catch (e) { err(res, e.message); }
+});
+
 // GET /api/gyms/:id
 router.get('/:id', param('id').isMongoId(), async (req, res) => {
   if (validate(req, res)) return;

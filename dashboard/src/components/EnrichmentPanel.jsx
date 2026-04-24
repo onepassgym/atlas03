@@ -83,11 +83,17 @@ export default function EnrichmentPanel() {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
+      style={{ 
+        background: 'rgba(30, 41, 59, 0.4)', 
+        border: '1px solid rgba(255,255,255,0.05)',
+        overflow: 'hidden',
+        position: 'relative'
+      }}
     >
       {/* Header */}
-      <div className="card-header" style={{ marginBottom: 12 }}>
+      <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className="card-title">Enrichment Engine</span>
+          <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Database size={16} color="var(--accent)" /> Enrichment Engine</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div
               className={`status-indicator ${isRunning ? 'pulse' : ''}`}

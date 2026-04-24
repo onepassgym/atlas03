@@ -5,7 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const router   = express.Router();
 
 const { 
-  addCityJob, addGymNameJob, getQueueStats, getQueueJobStatus, 
+  addCityJob, addGymNameJob, getQueueStats, getMediaQueueStats, getQueueJobStatus, 
   clearCrawlQueue, requestCancelJob, removeBullJob, promoteJobToFront,
   removeJobAndBatches
 } = require('../queue/queues');
@@ -280,7 +280,7 @@ router.get('/jobs',
  */
 // GET /api/crawl/queue/stats
 router.get('/queue/stats', async (req, res) => {
-  try { ok(res, { queue: await getQueueStats() }); }
+  try { ok(res, { queue: await getQueueStats(), mediaQueue: await getMediaQueueStats() }); }
   catch (e) { err(res, e.message); }
 });
 
