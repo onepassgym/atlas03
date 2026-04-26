@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { setEnv, setApiKey, getApiKey, getBaseUrl, api, getEnv } from '../api/client';
 import { useSSE } from '../hooks/useSSE';
+import ApiKeyModal from '../components/ApiKeyModal';
 
 const AppContext = createContext(null);
 
@@ -15,6 +16,8 @@ export function AppProvider({ children }) {
   const storedEnv = isProdHost ? 'prod' : (localStorage.getItem('atlas_env') || 'local');
 
   const [env, setEnvState] = useState(storedEnv);
+  const [showKeyModalForEnv, setShowKeyModalForEnv] = useState(null);
+  const [apiKeySet, setApiKeySet] = useState(false);
   const [connected, setConnected] = useState(false);
   const [events, setEvents] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -53,13 +56,16 @@ export function AppProvider({ children }) {
     setEnv(env, prodUrl);
 
     const keyName = `atlas_api_key_${env}`;
-    let key = sessionStorage.getItem(keyName);
+    let key = localStorage.getItem(keyName);
     if (!key) {
-      key = prompt(`Enter Atlas06 API Key for [${env.toUpperCase()}]:`);
-      if (key) sessionStorage.setItem(keyName, key);
+      setShowKeyModalForEnv(env);
+      setApiKeySet(false);
+    } else {
+      setApiKey(key);
+      setApiKeySet(true);
+      setShowKeyModalForEnv(null);
     }
-    if (key) setApiKey(key);
-  }, [env]);
+  }, [env, isProdHost]);
 
   // Toast system
   const toast = useCallback((msg, type = 'info') => {
@@ -137,7 +143,7 @@ export function AppProvider({ children }) {
   const handleConnection = useCallback((c) => setConnected(c), []);
 
   // SSE connection
-  const { reconnect } = useSSE(handleEvent, handleLog, handleConnection, [env]);
+  const { reconnect } = useSSE(handleEvent, handleLog, handleConnection, [env, apiKeySet]);
 
   // Env switching  
   const switchEnv = useCallback((newEnv) => {
@@ -148,20 +154,12 @@ export function AppProvider({ children }) {
     setEvents([]);
     setLogs([]);
 
-    // Re-prompt for API key if needed
-    const keyName = `atlas_api_key_${newEnv}`;
-    let key = sessionStorage.getItem(keyName);
-    if (!key) {
-      key = prompt(`Enter Atlas06 API Key for [${newEnv.toUpperCase()}]:`);
-      if (key) sessionStorage.setItem(keyName, key);
-    }
-    if (key) setApiKey(key);
-
     toast(`Switched to ${newEnv.toUpperCase()}`, 'info');
   }, [toast, isProdHost]);
 
   // Load event history on mount
   useEffect(() => {
+    if (!apiKeySet) return;
     api.get('/api/events/history?limit=150')
       .then(res => {
         if (res?.success && res.events?.length) {
@@ -171,7 +169,7 @@ export function AppProvider({ children }) {
         }
       })
       .catch(() => {});
-  }, [env]);
+  }, [env, apiKeySet]);
 
   const clearLogs = useCallback(() => setLogs([]), []);
   const clearEvents = useCallback(() => setEvents([]), []);
@@ -195,5 +193,21 @@ export function AppProvider({ children }) {
     crawlActivity,
   };
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      {children}
+      {showKeyModalForEnv && (
+        <ApiKeyModal 
+          env={showKeyModalForEnv} 
+          onSave={(key) => {
+            const keyName = `atlas_api_key_${showKeyModalForEnv}`;
+            localStorage.setItem(keyName, key);
+            setApiKey(key);
+            setApiKeySet(true);
+            setShowKeyModalForEnv(null);
+          }} 
+        />
+      )}
+    </AppContext.Provider>
+  );
 }
