@@ -17,6 +17,7 @@ const { connectDB }          = require('../db/connection');
 const { downloadAllMedia }   = require('../media/downloader');
 const Gym                    = require('../db/gymModel');
 const Photo                  = require('../db/photoModel');
+const SystemState            = require('../db/systemStateModel');
 const cfg                    = require('../../config');
 const logger                 = require('../utils/logger');
 
@@ -29,10 +30,23 @@ const connection = {
 // Media workers are I/O bound — run many in parallel
 const MEDIA_CONCURRENCY = parseInt(process.env.MEDIA_WORKER_CONCURRENCY || '8', 10);
 
+let isShuttingDown = false;
+
+async function waitIfPaused() {
+  let state = await SystemState.getGlobalState().catch(() => ({ mediaQueuePaused: false, globalPause: false }));
+  while ((state.globalPause || state.mediaQueuePaused) && !isShuttingDown) {
+    await new Promise(r => setTimeout(r, 5000));
+    state = await SystemState.getGlobalState().catch(() => ({ mediaQueuePaused: false, globalPause: false }));
+  }
+}
+
 // ── Job handler ───────────────────────────────────────────────────────────────
 
 async function processMediaJob(job) {
   const { gymId, slug, photoUrls } = job.data;
+
+  // Wait indefinitely if the queue is paused or system is in standby
+  await waitIfPaused();
 
   if (!photoUrls?.length) {
     logger.info(`[media] No photos to download for gym ${gymId}`);
@@ -151,6 +165,7 @@ async function start() {
 
   // ── Graceful shutdown ────────────────────────────────────────────────────
   const shutdown = async (signal) => {
+    isShuttingDown = true;
     logger.info(`\n⏳ Media worker received ${signal} — draining...`);
     try { await worker.close(); } catch (_) {}
     logger.info('👋 Media worker shut down.');

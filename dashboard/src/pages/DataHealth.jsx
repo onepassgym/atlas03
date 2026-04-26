@@ -107,74 +107,99 @@ export default function DataHealth() {
 
   return (
     <motion.div className="container" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-      {/* Page Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <ShieldCheck size={22} style={{ color: 'var(--accent)' }} />
-          <div>
-            <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Data Health Intelligence</h1>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
-              {h.totalGyms.toLocaleString()} venues · Real-time quality monitoring
-            </p>
+      {/* ── Command Center Header ────── */}
+      <div style={{
+        background: 'var(--header-glass-bg)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid var(--border-glow)',
+        borderRadius: 16,
+        padding: '24px 30px',
+        marginBottom: 20,
+        boxShadow: 'var(--shadow)',
+        position: 'relative',
+        overflow: 'hidden'
+      }}>
+        <div style={{ position: 'absolute', inset: 0, opacity: 0.1, backgroundImage: 'linear-gradient(var(--text-muted) 1px, transparent 1px), linear-gradient(90deg, var(--text-muted) 1px, transparent 1px)', backgroundSize: '20px 20px', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)' }} />
+        
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+            <div style={{ 
+              padding: 16, 
+              background: 'rgba(59, 130, 246, 0.1)', 
+              borderRadius: 16, 
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              boxShadow: '0 0 24px rgba(59, 130, 246, 0.15)'
+            }}>
+              <ShieldCheck size={32} style={{ color: 'var(--accent)', filter: 'drop-shadow(0 0 8px rgba(59, 130, 246, 0.4))' }} />
+            </div>
+            <div>
+              <h1 style={{ 
+                fontSize: 28, fontWeight: 900, margin: 0, letterSpacing: '-1px', 
+                background: 'var(--header-text-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                textShadow: 'var(--header-text-shadow)' 
+              }}>
+                DATA HEALTH INTELLIGENCE
+              </h1>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', fontFamily: 'var(--mono)', marginTop: 4 }}>
+                {h.totalGyms.toLocaleString()} Nodes · Status: <span style={{ color: 'var(--success)' }}>Optimal</span>
+              </div>
+            </div>
           </div>
+          <button className="btn secondary sm" onClick={fetchAll} style={{ padding: '10px 16px', background: 'var(--bg-surface)' }}>
+            <RefreshCw size={14} className={loading ? 'spin' : ''} style={{ marginRight: 8 }} /> Force Re-scan
+          </button>
         </div>
-        <button className="btn accent" onClick={fetchAll} style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-          <RefreshCw size={13} /> Refresh
-        </button>
       </div>
 
-      {/* Health Rings */}
-      <div className="card" style={{ marginBottom: 8 }}>
-        <div className="card-header">
-          <span className="card-title">Health Overview</span>
-          <span className="card-icon"><Heart size={15} /></span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: 16, padding: '12px 0' }}>
-          <HealthRing value={h.avgCompleteness} label="Completeness" color="#3b82f6" />
-          <HealthRing value={freshPct} label="Freshness" color="#10b981" />
-          <HealthRing value={enrichPct} label="Enriched" color="#8b5cf6" />
-          <HealthRing value={reviewPct} label="Has Reviews" color="#f59e0b" />
+      {/* ── Health Overview Rings ────── */}
+      <div className="card" style={{ marginBottom: 24, padding: '30px 20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 24 }}>
+          <HealthRing value={h.avgCompleteness} label="Completeness" color="#3b82f6" icon={Database} />
+          <HealthRing value={freshPct} label="Freshness" color="#10b981" icon={Clock} />
+          <HealthRing value={enrichPct} label="Enriched" color="#8b5cf6" icon={Zap} />
+          <HealthRing value={reviewPct} label="Has Reviews" color="#f59e0b" icon={Activity} />
         </div>
       </div>
 
       {/* Stat Cards */}
-      <div className="grid" style={{ marginBottom: 8 }}>
-        <StatCard title="Total Venues" value={h.totalGyms} label="in database" icon={<Database size={18} />} color="blue" />
-        <StatCard title="Stale Data" value={h.staleness.stale + h.staleness.aging} label={`${h.staleness.stale} critical (>90d)`} icon={<Clock size={18} />} color="orange" />
-        <StatCard title="Closed" value={h.closedGyms.permanently + h.closedGyms.temporarily} label={`${h.closedGyms.permanently} permanent · ${h.closedGyms.temporarily} temp`} icon={<AlertTriangle size={18} />} color="red" />
-        <StatCard title="Changes (30d)" value={changes.length} label="significant changes" icon={<Activity size={18} />} color="purple" />
+      {/* ── Stat Cards ────── */}
+      <div className="grid" style={{ marginBottom: 24 }}>
+        <StatCard title="Total Venues" value={h.totalGyms} label="active in cluster" icon={<Database size={18} />} color="blue" />
+        <StatCard title="Critical Stale" value={h.staleness.stale} label={`needs enrichment soon`} icon={<Clock size={18} />} color="orange" sublabel={`${h.staleness.aging} aging`} />
+        <StatCard title="Closed/Risk" value={h.closedGyms.permanently + h.closedGyms.temporarily} label="flagged during crawl" icon={<AlertTriangle size={18} />} color="red" />
+        <StatCard title="Significant Events" value={changes.length} label="recorded last 30d" icon={<Activity size={18} />} color="purple" />
       </div>
 
-      {/* Missing Fields + Quality Distribution */}
-      <div className="grid-2" style={{ marginBottom: 8 }}>
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Missing Data Fields</span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>
-              {Math.round(100 - h.avgCompleteness)}% gaps
+      {/* ── Detailed Metrics Grid ────── */}
+      <div className="grid-2" style={{ marginBottom: 24 }}>
+        <div className="card" style={{ padding: 24 }}>
+          <div className="card-header" style={{ marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+            <span className="card-title" style={{ fontSize: 14 }}>Missing Data Gaps</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--mono)', background: 'var(--bg-surface)', padding: '2px 8px', borderRadius: 4 }}>
+               {fieldEntries.length} Tracked Fields
             </span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {fieldEntries.map(([key, data]) => {
               const meta = FIELD_META[key] || { label: key, icon: '•', color: '#6b7280' };
               const pct = data.pct;
               return (
                 <div key={key}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span>{meta.icon}</span> {meta.label}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)' }}>
+                      <span style={{ filter: 'grayscale(1)', opacity: 0.8 }}>{meta.icon}</span> {meta.label}
                     </span>
-                    <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: pct > 50 ? '#ef4444' : pct > 25 ? '#f59e0b' : '#10b981', fontWeight: 700 }}>
+                    <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: pct > 50 ? 'var(--danger)' : pct > 25 ? 'var(--warning)' : 'var(--success)', fontWeight: 800 }}>
                       {pct}% missing
-                      <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 4 }}>({data.count.toLocaleString()})</span>
                     </span>
                   </div>
-                  <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: 6, background: 'var(--bg-surface)', borderRadius: 3, overflow: 'hidden', border: '1px solid var(--border)' }}>
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${100 - pct}%` }}
-                      transition={{ duration: 0.8, ease: 'easeOut' }}
-                      style={{ height: '100%', borderRadius: 3, background: `linear-gradient(90deg, ${meta.color}, ${meta.color}88)` }}
+                      transition={{ duration: 1, ease: 'easeOut' }}
+                      style={{ height: '100%', background: `linear-gradient(90deg, ${meta.color}, ${meta.color}aa)`, boxShadow: `0 0 8px ${meta.color}44` }}
                     />
                   </div>
                 </div>
@@ -183,182 +208,168 @@ export default function DataHealth() {
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Quality Score Distribution</span>
-            <span className="card-icon">📊</span>
+        <div className="card" style={{ padding: 24 }}>
+          <div className="card-header" style={{ marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+            <span className="card-title" style={{ fontSize: 14 }}>Quality Distribution</span>
+            <span className="card-icon"><Activity size={14} /></span>
           </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={h.qualityDistribution} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={h.qualityDistribution} margin={{ top: 10, right: 10, bottom: 0, left: -20 }}>
+              <defs>
+                {QUALITY_COLORS.map((c, i) => (
+                  <linearGradient id={`barGrad-${i}`} x1="0" y1="0" x2="0" y2="1" key={i}>
+                    <stop offset="0%" stopColor={c} stopOpacity={0.8} />
+                    <stop offset="100%" stopColor={c} stopOpacity={0.2} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--text-muted)', fontWeight: 600 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-              <Tooltip content={<ChartTooltip />} />
-              <Bar dataKey="count" name="Gyms" radius={[6, 6, 0, 0]}>
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+              <Bar dataKey="count" name="Gyms" radius={[4, 4, 0, 0]}>
                 {h.qualityDistribution.map((_, i) => (
-                  <Cell key={i} fill={QUALITY_COLORS[i]} />
+                  <Cell key={i} fill={`url(#barGrad-${i})`} stroke={QUALITY_COLORS[i]} strokeWidth={1} />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+          <div style={{ marginTop: 20, padding: 12, background: 'var(--bg-surface)', borderRadius: 8, fontSize: 11, color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+             Average quality score: <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{h.avgCompleteness}%</span>. Scores are calculated based on field presence, photo count, and review recency.
+          </div>
         </div>
       </div>
 
-      {/* Staleness + Daily Changes */}
-      <div className="grid-2" style={{ marginBottom: 8 }}>
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Data Freshness</span>
+      <div className="grid-2" style={{ marginBottom: 24 }}>
+        <div className="card" style={{ padding: 24 }}>
+          <div className="card-header" style={{ marginBottom: 16 }}>
+            <span className="card-title" style={{ fontSize: 14 }}>Staleness Index</span>
             <span className="card-icon">⏰</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '8px 0' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {stalenessData.map((d, i) => {
               const pct = Math.round((d.value / stalenessTotal) * 100);
               return (
                 <div key={d.name}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600 }}>{d.name}</span>
-                    <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: d.fill, fontWeight: 700 }}>
-                      {d.value.toLocaleString()} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({pct}%)</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{d.name}</span>
+                    <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: d.fill, fontWeight: 800 }}>
+                      {pct}%
                     </span>
                   </div>
-                  <div style={{ height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                  <div style={{ height: 10, background: 'var(--bg-surface)', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--border)' }}>
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${pct}%` }}
-                      transition={{ duration: 0.8, delay: i * 0.1 }}
-                      style={{ height: '100%', borderRadius: 4, background: d.fill }}
+                      transition={{ duration: 1, delay: i * 0.1 }}
+                      style={{ height: '100%', background: d.fill, boxShadow: `0 0 10px ${d.fill}66` }}
                     />
                   </div>
                 </div>
               );
             })}
           </div>
-          {/* Stacked bar summary */}
-          <div style={{ marginTop: 12 }}>
-            <div style={{ display: 'flex', height: 18, borderRadius: 9, overflow: 'hidden' }}>
-              {stalenessData.map(d => (
-                <motion.div
-                  key={d.name}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${(d.value / stalenessTotal) * 100}%` }}
-                  transition={{ duration: 1 }}
-                  style={{ background: d.fill, height: '100%' }}
-                  title={`${d.name}: ${d.value}`}
-                />
-              ))}
-            </div>
+          <div style={{ marginTop: 24, display: 'flex', height: 24, borderRadius: 12, overflow: 'hidden', border: '2px solid var(--border)', padding: 2 }}>
+            {stalenessData.map(d => (
+              <motion.div
+                key={d.name}
+                initial={{ width: 0 }}
+                animate={{ width: `${(d.value / stalenessTotal) * 100}%` }}
+                transition={{ duration: 1.2 }}
+                style={{ background: d.fill, height: '100%', borderRight: '1px solid rgba(0,0,0,0.1)' }}
+              />
+            ))}
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Daily Changes (14d)</span>
-            <span className="card-icon">📈</span>
+        <div className="card" style={{ padding: 24 }}>
+          <div className="card-header" style={{ marginBottom: 16 }}>
+            <span className="card-title" style={{ fontSize: 14 }}>System-Wide Changes</span>
+            <span className="card-icon">📊</span>
           </div>
           {dailyChanges.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={dailyChanges} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={dailyChanges} margin={{ top: 10, right: 10, bottom: 0, left: -20 }}>
                 <defs>
                   <linearGradient id="changeGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+                    <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="_id" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false}
                   tickFormatter={v => v.slice(5)} />
                 <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTooltip />} />
-                <Area type="monotone" dataKey="total" name="Changes" stroke="#8b5cf6" fill="url(#changeGrad)" strokeWidth={2} />
-                <Area type="monotone" dataKey="gymsAffected" name="Gyms" stroke="#3b82f6" fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
+                <Area type="monotone" dataKey="total" name="Enrichments" stroke="var(--accent)" fill="url(#changeGrad)" strokeWidth={3} />
+                <Area type="monotone" dataKey="gymsAffected" name="Venues" stroke="var(--success)" fill="none" strokeWidth={2} strokeDasharray="5 5" />
               </AreaChart>
             </ResponsiveContainer>
-          ) : <div className="empty-state">No change data yet</div>}
+          ) : <div className="empty-state">No telemetry data found</div>}
         </div>
       </div>
 
-      {/* Change Feed + Worst Gyms */}
-      <div className="grid-2" style={{ marginBottom: 8 }}>
+      {/* ── Reconnaissance + Enrichment Breakdown ────── */}
+      <div className="grid-2" style={{ marginBottom: 24, alignItems: 'start' }}>
         <div className="card">
-          <div className="card-header">
-            <span className="card-title">Significant Changes</span>
-            <span className="card-icon">🔔</span>
+          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 16 }}>
+            <span className="card-title" style={{ fontSize: 14 }}>Priority Reconnaissance Feed</span>
           </div>
-          <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+          <div style={{ maxHeight: 440, overflowY: 'auto', paddingRight: 8 }} className="custom-scrollbar">
             <ChangeFeed changes={changes} />
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Lowest Quality — Enrich Targets</span>
-            <button className="btn" onClick={handleBatchEnrich}
-              style={{ fontSize: 10, padding: '3px 10px', display: 'flex', alignItems: 'center', gap: 4,
-                background: 'rgba(139,92,246,0.15)', color: 'var(--purple)', border: '1px solid rgba(139,92,246,0.25)' }}>
-              <Zap size={11} /> Enrich All 10
-            </button>
-          </div>
-          <div style={{ maxHeight: 380, overflowY: 'auto' }}>
-            {worstGyms.length > 0 ? worstGyms.map(g => (
-              <div key={g._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid rgba(75,85,99,0.12)' }}>
-                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setSelectedGym(g._id)}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {g.name}
-                    </span>
-                    <span style={{ fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 700,
-                      color: g.qualityScore < 20 ? '#ef4444' : g.qualityScore < 40 ? '#f97316' : '#f59e0b' }}>
-                      {g.qualityScore}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {g.areaName || 'Unknown area'}
-                    {g.missing?.length > 0 && (
-                      <span style={{ marginLeft: 6 }}>
-                        Missing: {g.missing.map(m => FIELD_META[m]?.icon || '•').join(' ')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <button
-                  className="btn"
-                  onClick={() => handleEnrichGym(g._id, g.name)}
-                  disabled={enrichingIds.has(g._id)}
-                  style={{ fontSize: 10, padding: '3px 8px', flexShrink: 0,
-                    background: 'rgba(59,130,246,0.12)', color: 'var(--accent)', border: '1px solid rgba(59,130,246,0.2)' }}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="card" style={{ padding: 24 }}>
+            <div className="card-header" style={{ marginBottom: 16 }}>
+              <span className="card-title" style={{ fontSize: 14 }}>Lowest Health Nodes</span>
+              <button className="btn accent sm" onClick={handleBatchEnrich} style={{ background: 'var(--warning)', color: '#000', fontWeight: 800 }}>
+                <Zap size={14} /> BATCH ENRICH (10)
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {worstGyms.length > 0 ? worstGyms.map(g => (
+                <motion.div 
+                  key={g._id} 
+                  whileHover={{ backgroundColor: 'var(--row-hover)' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 8, borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}
                 >
-                  <Zap size={10} />
-                </button>
-              </div>
-            )) : <div className="empty-state">No gyms found</div>}
+                  <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setSelectedGym(g._id)}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{g.name}</span>
+                      <span style={{ fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 800, color: g.qualityScore < 30 ? 'var(--danger)' : 'var(--warning)' }}>
+                        {g.qualityScore}%
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 6 }}>
+                      {g.areaName} {g.missing?.length > 0 && <span style={{ color: 'var(--text-muted)' }}>• Missing: {g.missing.map(m => FIELD_META[m]?.icon || '•').join('')}</span>}
+                    </div>
+                  </div>
+                  <button className="btn secondary sm" onClick={() => handleEnrichGym(g._id, g.name)} disabled={enrichingIds.has(g._id)}>
+                    {enrichingIds.has(g._id) ? <RefreshCw size={12} className="spin" /> : <Zap size={12} />}
+                  </button>
+                </motion.div>
+              )) : <div className="empty-state">No targets found</div>}
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Enrichment Status Breakdown */}
-      <div className="card" style={{ marginBottom: 8 }}>
-        <div className="card-header">
-          <span className="card-title">Enrichment Coverage</span>
-          <span className="card-icon">🔬</span>
-        </div>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', padding: '8px 0' }}>
-          {[
-            { key: 'success', label: 'Enriched', color: '#10b981', icon: '✅' },
-            { key: 'failed', label: 'Failed', color: '#ef4444', icon: '❌' },
-            { key: 'never', label: 'Never Enriched', color: '#6b7280', icon: '⏳' },
-          ].map(s => {
-            const count = h.enrichmentStatus?.[s.key] || 0;
-            const pct = Math.round((count / h.totalGyms) * 100);
-            return (
-              <div key={s.key} style={{ flex: '1 1 140px', padding: 12, borderRadius: 10,
-                background: `${s.color}10`, border: `1px solid ${s.color}25` }}>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{s.icon} {s.label}</div>
-                <div style={{ fontSize: 24, fontWeight: 800, color: s.color, fontVariantNumeric: 'tabular-nums' }}>
-                  {count.toLocaleString()}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{pct}% of total</div>
-              </div>
-            );
-          })}
+          <div className="card" style={{ padding: 20 }}>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              {[
+                { key: 'success', label: 'Enriched', color: 'var(--success)', icon: '✅' },
+                { key: 'failed', label: 'Failed', color: 'var(--danger)', icon: '❌' },
+                { key: 'never', label: 'Sync Only', color: 'var(--text-muted)', icon: '⏳' },
+              ].map(s => {
+                const count = h.enrichmentStatus?.[s.key] || 0;
+                const pct = Math.round((count / h.totalGyms) * 100);
+                return (
+                  <div key={s.key} style={{ flex: 1, minWidth: 100, padding: 12, borderRadius: 12, background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 6 }}>{s.label}</div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: s.color }}>{pct}%</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 

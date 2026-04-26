@@ -2,6 +2,7 @@
 const express = require('express');
 const fs      = require('fs');
 const fsp     = fs.promises;
+const os      = require('os');
 const path    = require('path');
 const { body, query, validationResult } = require('express-validator');
 const router  = express.Router();
@@ -21,8 +22,11 @@ const Gym = require('../db/gymModel');
 const { calculateQualityScore } = require('../services/intelligence/scoring');
 const { analyzeGymSentiment } = require('../services/intelligence/sentiment');
 const { Review } = require('../db/reviewModel');
+const { crawlQueue, chainCrawlQueue, mediaQueue } = require('../queue/queues');
+const SystemState = require('../db/systemStateModel');
 
 const LOG_DIR = cfg.log.dir;
+let lastCpuInfo = os.cpus();
 
 /**
  * @swagger
@@ -159,6 +163,112 @@ router.get('/media', async (req, res) => {
       totalSize,
       count: validFiles.length
     });
+  } catch (e) {
+    err(res, e.message);
+  }
+});
+
+// GET /api/system/state
+router.get('/state', async (req, res) => {
+  try {
+    const state = await SystemState.getGlobalState();
+    ok(res, { state });
+  } catch (e) { err(res, e.message); }
+});
+
+// GET /api/system/vps-stats
+router.get('/vps-stats', async (req, res) => {
+  try {
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    const memoryUsagePercent = (usedMem / totalMem) * 100;
+    const currentCpuInfo = os.cpus();
+    let idleDifference = 0;
+    let totalDifference = 0;
+
+    for (let i = 0; i < currentCpuInfo.length; i++) {
+      const current = currentCpuInfo[i].times;
+      const previous = lastCpuInfo[i] ? lastCpuInfo[i].times : current;
+      const currentTotal = Object.values(current).reduce((acc, val) => acc + val, 0);
+      const previousTotal = Object.values(previous).reduce((acc, val) => acc + val, 0);
+      totalDifference += currentTotal - previousTotal;
+      idleDifference += current.idle - previous.idle;
+    }
+    lastCpuInfo = currentCpuInfo;
+    const cpuAvg = totalDifference === 0 ? 0 : 100 - (100 * idleDifference / totalDifference);
+
+    ok(res, {
+      vps: {
+        memory: { total: totalMem, used: usedMem, free: freeMem, percent: memoryUsagePercent },
+        cpu: { cores: currentCpuInfo.length, loadAvg: os.loadavg(), usagePercent: cpuAvg },
+        uptime: os.uptime(),
+        platform: os.platform(),
+        arch: os.arch()
+      }
+    });
+  } catch (e) { err(res, e.message); }
+});
+
+// POST /api/system/media/queue/pause
+router.post('/media/queue/pause', async (req, res) => {
+  try {
+    await mediaQueue.pause();
+    const state = await SystemState.getGlobalState();
+    state.mediaQueuePaused = true;
+    await state.save();
+    ok(res, { message: 'Media downloading paused', state });
+  } catch (e) {
+    err(res, e.message);
+  }
+});
+
+// POST /api/system/global-pause
+router.post('/global-pause', express.json(), async (req, res) => {
+  try {
+    const { paused } = req.body;
+    const state = await SystemState.getGlobalState();
+    state.globalPause = !!paused;
+    
+    if (state.globalPause) {
+      await crawlQueue.pause();
+      await chainCrawlQueue.pause();
+      await mediaQueue.pause();
+      state.mediaQueuePaused = true;
+      state.crawlQueuePaused = true;
+    } else {
+      await crawlQueue.resume();
+      await chainCrawlQueue.resume();
+      await mediaQueue.resume();
+      state.mediaQueuePaused = false;
+      state.crawlQueuePaused = false;
+    }
+    
+    await state.save();
+    ok(res, { message: state.globalPause ? 'System Standby Activated' : 'System Resumed', state });
+  } catch (e) { err(res, e.message); }
+});
+
+// POST /api/system/pace
+router.post('/pace', express.json(), async (req, res) => {
+  try {
+    const { pace } = req.body;
+    if (!['slow', 'normal', 'fast'].includes(pace)) return err(res, 'Invalid pace', 400);
+    const state = await SystemState.getGlobalState();
+    state.crawlPace = pace;
+    await state.save();
+    ok(res, { message: `Crawl pace set to ${pace}`, state });
+  } catch (e) { err(res, e.message); }
+});
+
+// POST /api/system/media/queue/resume
+router.post('/media/queue/resume', async (req, res) => {
+  try {
+    await mediaQueue.resume();
+    const state = await SystemState.getGlobalState();
+    state.mediaQueuePaused = false;
+    await state.save();
+    ok(res, { message: 'Media downloading resumed', state });
   } catch (e) {
     err(res, e.message);
   }

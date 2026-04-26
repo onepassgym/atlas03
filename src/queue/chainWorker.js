@@ -25,6 +25,7 @@ const { processGym }    = require('../scraper/gymProcessor');
 const CrawlJob          = require('../db/crawlJobModel');
 const Gym               = require('../db/gymModel');
 const GymChain          = require('../db/gymChainModel');
+const SystemState       = require('../db/systemStateModel');
 const { isJobCancelled, clearCancelFlag } = require('./queues');
 const cfg               = require('../../config');
 const logger            = require('../utils/logger');
@@ -46,7 +47,22 @@ const MAX_RETRIES = cfg.scraper.maxRetries;
 let isShuttingDown = false;
 
 function sleep(min, max) {
-  return new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
+  return new Promise(async (resolve) => {
+    let state = await SystemState.getGlobalState().catch(() => ({ crawlPace: 'normal', globalPause: false }));
+    
+    // Hold while globally paused
+    while (state.globalPause && !isShuttingDown) {
+      await new Promise(r => setTimeout(r, 5000));
+      state = await SystemState.getGlobalState().catch(() => ({ crawlPace: 'normal', globalPause: false }));
+    }
+
+    let paceMultiplier = 1;
+    if (state.crawlPace === 'slow') paceMultiplier = 3;
+    if (state.crawlPace === 'fast') paceMultiplier = 0.5;
+
+    const waitMs = (min + Math.random() * (max - min)) * paceMultiplier;
+    setTimeout(resolve, waitMs);
+  });
 }
 
 async function updateJob(jobId, update) {

@@ -34,7 +34,7 @@ function fmtDuration(ms) {
   return `${Math.floor(ms / 3600000)}h ${Math.round((ms % 3600000) / 60000)}m`;
 }
 
-export default function Jobs() {
+export default function JobsPanel() {
   const { toast, events } = useApp();
   const [jobs, setJobs] = useState([]);
   const [total, setTotal] = useState(0);
@@ -132,9 +132,9 @@ export default function Jobs() {
   const totalPages = Math.ceil(total / LIMIT);
 
   return (
-    <motion.div className="container" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+    <div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* ── Filter Bar ────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span className="section-title" style={{ marginBottom: 0, flexShrink: 0 }}>Job History</span>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flex: '1 1 auto' }}>
           {STATUS_FILTERS.map(f => (
@@ -246,6 +246,6 @@ export default function Jobs() {
 
       {/* Job Detail Drawer */}
       {selectedJobId && <JobDrawer jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />}
-    </motion.div>
+    </div>
   );
 }

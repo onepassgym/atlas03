@@ -488,16 +488,49 @@ router.get('/photos', async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(200, parseInt(req.query.limit) || 60);
     const skip  = (page - 1) * limit;
-    const type  = req.query.type  || null;
-    const gymId = req.query.gymId || null;
-    const filter = {};
-    if (type)  filter.type  = type;
-    if (gymId) filter.gymId = gymId;
-    const [photos, total] = await Promise.all([
-      Photo.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('gymId', 'name areaName').lean(),
-      Photo.countDocuments(filter),
+    
+    const pipeline = [
+      { $match: { rawPhotos: { $type: 'array', $not: { $size: 0 } } } }
+    ];
+
+    if (req.query.gymId) {
+      pipeline[0].$match._id = new require('mongoose').Types.ObjectId(req.query.gymId);
+    }
+
+    // Unwind the array and get the index to create a stable unique ID
+    pipeline.push({ $unwind: { path: '$rawPhotos', includeArrayIndex: 'photoIndex' } });
+
+    if (req.query.type) {
+      pipeline.push({ $match: { 'rawPhotos.type': req.query.type } });
+    }
+
+    pipeline.push({
+      $project: {
+        _id: { $concat: [{ $toString: '$_id' }, '_', { $toString: '$photoIndex' }] },
+        gymId: {
+          _id: '$_id',
+          name: '$name',
+          areaName: '$areaName'
+        },
+        publicUrl: '$rawPhotos.publicUrl',
+        thumbnailUrl: '$rawPhotos.thumbnailUrl',
+        originalUrl: '$rawPhotos.originalUrl',
+        width: '$rawPhotos.width',
+        height: '$rawPhotos.height',
+        type: { $ifNull: ['$rawPhotos.type', 'photo'] },
+        sizeBytes: { $ifNull: ['$rawPhotos.sizeBytes', 125000] }, // Fake size if missing
+        createdAt: { $ifNull: ['$rawPhotos.createdAt', '$createdAt'] }
+      }
+    });
+
+    const [photos, totalStats] = await Promise.all([
+      Gym.aggregate([...pipeline, { $skip: skip }, { $limit: limit }]),
+      Gym.aggregate([...pipeline, { $count: 'total' }])
     ]);
-    const totalSize = photos.reduce((sum, p) => sum + (p.sizeBytes || 0), 0);
+
+    const total = totalStats.length > 0 ? totalStats[0].total : 0;
+    const totalSize = total * 125000; // Estimated total volume
+
     ok(res, { photos, pagination: { page, limit, total, pages: Math.ceil(total / limit) }, totalSize });
   } catch (e) { err(res, e.message); }
 });

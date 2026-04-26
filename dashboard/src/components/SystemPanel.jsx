@@ -8,7 +8,7 @@ import Modal from '../components/Modal';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 
-export default function System() {
+export default function SystemPanel() {
   const { toast, logs, clearLogs, chainsCache } = useApp();
   const [schedule, setSchedule] = useState([]);
   const [health, setHealth] = useState({});
@@ -53,9 +53,41 @@ export default function System() {
   const submitCrawlCity = async () => {
     if (!crawlCityInput.trim()) return;
     setCrawlCityModal(false);
+
+    let isJson = false;
+    let parsedData = null;
     try {
-      const res = await api.post('/api/crawl/city', { cityName: crawlCityInput });
-      toast(res?.success ? `Queued: ${crawlCityInput}` : (res?.error || 'Failed'), res?.success ? 'success' : 'error');
+      parsedData = JSON.parse(crawlCityInput);
+      isJson = true;
+    } catch(e) {}
+
+    try {
+      if (isJson) {
+        let citiesArray = [];
+        if (Array.isArray(parsedData)) {
+          citiesArray = parsedData;
+        } else if (parsedData && Array.isArray(parsedData.cities)) {
+          citiesArray = parsedData.cities;
+        } else if (parsedData && parsedData.cityName) {
+          const res = await api.post('/api/crawl/city', { cityName: parsedData.cityName });
+          toast(res?.success ? `Queued: ${parsedData.cityName}` : (res?.error || 'Failed'), res?.success ? 'success' : 'error');
+          setCrawlCityInput('');
+          return;
+        } else {
+          toast('Invalid JSON format. Expected array or { cities: [] }', 'error');
+          return;
+        }
+
+        if (citiesArray.length > 0) {
+          const res = await api.post('/api/crawl/batch', { cities: citiesArray });
+          toast(res?.success ? (res?.message || `Queued ${citiesArray.length} cities`) : (res?.error || 'Failed'), res?.success ? 'success' : 'error');
+        } else {
+          toast('No cities found in JSON', 'error');
+        }
+      } else {
+        const res = await api.post('/api/crawl/city', { cityName: crawlCityInput });
+        toast(res?.success ? `Queued: ${crawlCityInput}` : (res?.error || 'Failed'), res?.success ? 'success' : 'error');
+      }
       setCrawlCityInput('');
     } catch { toast('Network error', 'error'); }
   };
@@ -111,7 +143,7 @@ export default function System() {
   };
 
   return (
-    <motion.div className="container" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+    <div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div className="grid-2">
         {/* ── Command Center ────── */}
         <div className="card" style={{ position: 'relative', overflow: 'hidden' }}>
@@ -183,7 +215,7 @@ export default function System() {
       </div>
 
       {/* ── Logs ────── */}
-      <div className="card" style={{ marginTop: 16 }}>
+      <div className="card">
         <div className="card-header">
           <span className="card-title">Live System Logs</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -205,7 +237,7 @@ export default function System() {
       </div>
 
       {/* ── Health ────── */}
-      <div className="card" style={{ marginTop: 16 }}>
+      <div className="card">
         <div className="card-header"><span className="card-title">System Health</span><span className="card-icon">💚</span></div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-secondary)' }}>
           <span>SSE Clients: <strong>{health.sseClients ?? '—'}</strong></span>
@@ -218,8 +250,30 @@ export default function System() {
 
       {/* ── Modals ────── */}
       <Modal open={crawlCityModal} onClose={() => setCrawlCityModal(false)} title="🏙️ Queue City Crawl">
-        <input className="input" placeholder="e.g. Mumbai, Maharashtra, India" value={crawlCityInput} onChange={e => setCrawlCityInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitCrawlCity()} autoFocus />
-        <div className="modal-actions">
+        <textarea
+          className="input"
+          placeholder='e.g. "Mumbai, Maharashtra" OR JSON: ["City 1", "City 2"]'
+          value={crawlCityInput}
+          onChange={e => setCrawlCityInput(e.target.value)}
+          rows={4}
+          autoFocus
+          style={{ resize: 'vertical', fontFamily: 'var(--mono)', fontSize: 12 }}
+        />
+        <div style={{ marginTop: 8 }}>
+          <input
+            type="file"
+            accept=".json"
+            onChange={async (e) => {
+              const file = e.target.files[0];
+              if (file) {
+                const text = await file.text();
+                setCrawlCityInput(text);
+              }
+            }}
+            style={{ fontSize: 12, color: 'var(--text-muted)' }}
+          />
+        </div>
+        <div className="modal-actions" style={{ marginTop: 16 }}>
           <button className="btn" onClick={() => setCrawlCityModal(false)}>Cancel</button>
           <button className="btn primary" onClick={submitCrawlCity}>Queue Crawl</button>
         </div>
@@ -243,7 +297,7 @@ export default function System() {
           <button className="btn primary" onClick={submitChainCrawl}><Rocket size={14} /> Start Crawl</button>
         </div>
       </Modal>
-    </motion.div>
+    </div>
   );
 }
 

@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   BarChart, Bar, Legend, Cell, PieChart, Pie
 } from 'recharts';
 import { 
   Zap, Clock, CheckCircle2, AlertCircle, Calendar, RefreshCw, 
-  History, ArrowRight, BarChart3, Database, ShieldCheck
+  History, ArrowRight, BarChart3, Database, ShieldCheck, ChevronDown, ChevronUp, MapPin, Building2
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
@@ -27,6 +28,7 @@ export default function Enrichment() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedLogId, setExpandedLogId] = useState(null);
 
   const fetchData = useCallback(async () => {
     setRefreshing(true);
@@ -199,54 +201,142 @@ export default function Enrichment() {
               </tr>
             </thead>
             <tbody>
-              {logs.map((log, i) => (
-                <tr key={log._id || i}>
-                  <td style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                    {timeAgo(log.startedAt)}
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{log.gymName}</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>{log.gymId}</div>
-                  </td>
-                  <td>
-                    <span className={`badge ${log.status === 'success' ? 'success' : 'danger'}`}>
-                      {log.status === 'success' ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
-                      {log.status}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                    {(log.durationMs / 1000).toFixed(2)}s
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                      {log.fieldsUpdated?.slice(0, 3).map(f => (
-                        <span key={f} className="mini-chip">{f}</span>
-                      ))}
-                      {log.fieldsUpdated?.length > 3 && (
-                        <span className="mini-chip">+{log.fieldsUpdated.length - 3}</span>
-                      )}
-                      {(!log.fieldsUpdated || log.fieldsUpdated.length === 0) && log.status === 'success' && (
-                        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>Sync only</span>
-                      )}
-                      {log.status === 'failed' && (
-                        <span style={{ color: 'var(--danger)', fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
-                           <AlertCircle size={10} /> {log.error?.slice(0, 40)}...
+              {logs.map((log, i) => {
+                const isExpanded = expandedLogId === log._id;
+                return (
+                  <Fragment key={log._id || i}>
+                    <tr 
+                      onClick={() => setExpandedLogId(isExpanded ? null : log._id)}
+                      style={{ cursor: 'pointer', background: isExpanded ? 'var(--bg-surface)' : 'transparent' }}
+                    >
+                      <td style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                          {timeAgo(log.startedAt)}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{log.gymName}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>{log.gymId}</div>
+                      </td>
+                      <td>
+                        <span className={`badge ${log.status === 'success' ? 'success' : 'danger'}`}>
+                          {log.status === 'success' ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
+                          {log.status}
                         </span>
-                      )}
-                    </div>
-                  </td>
-                  <td style={{ fontSize: 12 }}>
-                     {(log.photosAdded > 0 || log.reviewsAdded > 0) ? (
-                        <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
-                           {log.photosAdded > 0 && `🖼️ ${log.photosAdded} `}
-                           {log.reviewsAdded > 0 && `⭐ ${log.reviewsAdded}`}
-                        </span>
-                     ) : (
-                        <span style={{ color: 'var(--text-muted)' }}>—</span>
-                     )}
-                  </td>
-                </tr>
-              ))}
+                      </td>
+                      <td style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                        {(log.durationMs / 1000).toFixed(2)}s
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {log.fieldsUpdated?.slice(0, 2).map(f => (
+                            <span key={f} className="mini-chip">{f}</span>
+                          ))}
+                          {log.fieldsUpdated?.length > 2 && (
+                            <span className="mini-chip">+{log.fieldsUpdated.length - 2}</span>
+                          )}
+                          {(!log.fieldsUpdated || log.fieldsUpdated.length === 0) && log.status === 'success' && (
+                            <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>Sync</span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ fontSize: 12 }}>
+                         {(log.photosAdded > 0 || log.reviewsAdded > 0) ? (
+                            <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                               {log.photosAdded > 0 && `🖼️ ${log.photosAdded} `}
+                               {log.reviewsAdded > 0 && `⭐ ${log.reviewsAdded}`}
+                            </span>
+                         ) : (
+                            <span style={{ color: 'var(--text-muted)' }}>—</span>
+                         )}
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr style={{ background: 'var(--bg-surface)' }}>
+                        <td colSpan="6" style={{ padding: '0 20px 20px 20px', borderBottom: '1px solid var(--border)' }}>
+                          <motion.div 
+                            initial={{ opacity: 0, y: -10 }} 
+                            animate={{ opacity: 1, y: 0 }}
+                            style={{ 
+                              background: 'rgba(255,255,255,0.02)', 
+                              border: '1px solid var(--border)', 
+                              borderRadius: 12, 
+                              padding: 20,
+                              display: 'grid',
+                              gridTemplateColumns: '1.2fr 1fr',
+                              gap: 24
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12, letterSpacing: 1 }}>Field Delta Analysis</div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                {log.fieldsUpdated?.map(f => (
+                                  <div key={f} style={{ 
+                                    padding: '6px 12px', background: 'rgba(59, 130, 246, 0.1)', 
+                                    border: '1px solid rgba(59, 130, 246, 0.2)', 
+                                    borderRadius: 8, fontSize: 12, color: 'var(--accent)',
+                                    display: 'flex', alignItems: 'center', gap: 6
+                                  }}>
+                                    <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)' }} />
+                                    {f}
+                                  </div>
+                                ))}
+                                {(!log.fieldsUpdated || log.fieldsUpdated.length === 0) && (
+                                  <div style={{ color: 'var(--text-muted)', fontSize: 13, fontStyle: 'italic' }}>
+                                    No data points were updated in this cycle.
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {log.status === 'failed' && (
+                                <div style={{ marginTop: 20 }}>
+                                  <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--danger)', marginBottom: 8, letterSpacing: 1 }}>Error Diagnostic</div>
+                                  <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.1)', borderRadius: 8, color: 'var(--danger)', fontSize: 12, fontFamily: 'var(--mono)' }}>
+                                    {log.error || 'Unknown processing error'}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
+                              <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12, letterSpacing: 1 }}>Discovery Impact</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--success)' }}>
+                                    <Clock size={18} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Duration</div>
+                                    <div style={{ fontSize: 15, fontWeight: 700 }}>{(log.durationMs / 1000).toFixed(2)}s</div>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+                                    <Building2 size={18} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Discovery Yield</div>
+                                    <div style={{ fontSize: 14, fontWeight: 700 }}>
+                                      {log.photosAdded || 0} Photos · {log.reviewsAdded || 0} Reviews
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div style={{ marginTop: 24 }}>
+                                <button className="btn secondary sm" style={{ width: '100%', justifyContent: 'center' }}>
+                                  View Full Venue Data <ArrowRight size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
               {logs.length === 0 && (
                 <tr>
                   <td colSpan="6" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>

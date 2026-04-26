@@ -285,20 +285,20 @@ export default function CrawlActivity() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
       style={{ 
-        background: 'rgba(30, 41, 59, 0.4)', 
-        border: '1px solid rgba(255,255,255,0.05)',
         overflow: 'hidden',
         position: 'relative'
       }}
     >
       {/* ── Header ── */}
-      <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 16 }}>
+      <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <StatusIcon />
+          <div style={{ padding: 6, background: `${cfg.color}15`, borderRadius: 8, border: `1px solid ${cfg.color}33` }}>
+            <cfg.icon size={18} color={cfg.color} />
+          </div>
           <div>
             <span className="card-title" style={{ color: 'var(--text-primary)', marginBottom: 2, display: 'block' }}>Live Activity</span>
-            <div style={{ fontSize: 11, color: activeConfig.color, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' }}>
-              {activeConfig.label}
+            <div style={{ fontSize: 11, color: cfg.color, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' }}>
+              {cfg.label}
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, ShieldCheck, Activity, Undo2 } from 'lucide-react';
-import { SIM, simCard, simHeader, simFooter, simIconBtn, simStatus } from './simUI';
+import { SIM, simCard, simHeader, simFooter, simIconBtn, simStatus, useGameMobileFix, MobileDPad } from './simUI';
 
 const ACCENT_RGB = '139,92,246'; // purple
 
@@ -34,6 +34,7 @@ export default function Game2048() {
   const tileIdCounter = useRef(0);
   const stateRef      = useRef({ board, score, best, gameOver, win, isActive, activeTiles });
   const historyRef    = useRef(null);
+  const gameRef       = useRef(null);
 
   useEffect(() => {
     stateRef.current = { board, score, best, gameOver, win, isActive, activeTiles };
@@ -161,27 +162,20 @@ export default function Game2048() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [move]);
 
-  const touchStart = useRef({x:0,y:0});
-  const handleTouchStart = (e) => { touchStart.current={x:e.touches[0].clientX,y:e.touches[0].clientY}; };
-  const handleTouchEnd   = (e) => {
-    if (!stateRef.current.isActive || stateRef.current.gameOver) return;
-    const dx=e.changedTouches[0].clientX-touchStart.current.x;
-    const dy=e.changedTouches[0].clientY-touchStart.current.y;
-    if (Math.abs(dx)>Math.abs(dy)) { if(Math.abs(dx)>30) move(dx>0?'right':'left'); }
-    else { if(Math.abs(dy)>30) move(dy>0?'down':'up'); }
-  };
+  useGameMobileFix(isActive, gameRef, move);
 
   const GAP = 5;
 
   return (
     <div
-      tabIndex={0}
+      ref={gameRef}
+      tabIndex={-1}
+      className={isActive ? 'mobile-fullscreen-active' : ''}
       onFocus={() => setIsActive(true)}
       onBlur={() => setIsActive(false)}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
       style={{ ...simCard(isActive, win), cursor:'default' }}
     >
+      {isActive && <MobileDPad onDirection={move} />}
       {/* ── Header ── */}
       <div style={simHeader(ACCENT_RGB)}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -192,9 +186,9 @@ export default function Game2048() {
         </div>
         <div style={{ display:'flex', gap:6, alignItems:'center' }}>
           {historyRef.current && (
-            <button onClick={undo} style={simIconBtn(false)} title="Undo (Ctrl+Z)"><Undo2 size={13}/></button>
+            <button onClick={undo} className="sim-icon-btn" style={simIconBtn(false)} title="Undo (Ctrl+Z)"><Undo2 size={13}/></button>
           )}
-          <button onClick={initGame} style={simIconBtn(false)} title="New game"><RefreshCw size={13}/></button>
+          <button onClick={initGame} className="sim-icon-btn" style={simIconBtn(false)} title="New game"><RefreshCw size={13}/></button>
         </div>
       </div>
 

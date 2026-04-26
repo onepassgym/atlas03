@@ -9,10 +9,7 @@ import Skeleton from './components/Skeleton';
 
 const Overview  = lazy(() => import('./pages/Overview'));
 const Explorer  = lazy(() => import('./pages/Explorer'));
-const Chains    = lazy(() => import('./pages/Chains'));
-const Jobs      = lazy(() => import('./pages/Jobs'));
 const GlobePage = lazy(() => import('./pages/GlobePage'));
-const System    = lazy(() => import('./pages/System'));
 const Enrichment = lazy(() => import('./pages/Enrichment'));
 const DataHealth = lazy(() => import('./pages/DataHealth'));
 const Simulations = lazy(() => import('./pages/SimulationsPage'));
@@ -38,10 +35,7 @@ function AppShell() {
         <Routes>
           <Route path="/overview" element={<Overview />} />
           <Route path="/explorer" element={<Explorer />} />
-          <Route path="/chains"   element={<Chains />} />
-          <Route path="/jobs"     element={<Jobs />} />
           <Route path="/globe"    element={<GlobePage />} />
-          <Route path="/system"   element={<System />} />
           <Route path="/enrichment" element={<Enrichment />} />
           <Route path="/data-health" element={<DataHealth />} />
           <Route path="/media"       element={<MediaStorage />} />

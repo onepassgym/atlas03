@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, X, HelpCircle, Info, Zap, Clock, Keyboard, ShieldCheck, Activity } from 'lucide-react';
-import { SIM, simCard, simHeader, simFooter, simIconBtn, simStatus } from './simUI';
+import { SIM, simCard, simHeader, simFooter, simIconBtn, simStatus, useGameMobileFix, MobileDPad } from './simUI';
 
 const LEVELS = {
   E: { size: 2, label: 'EASY',       scramble: 20  },
@@ -35,6 +35,7 @@ export default function MovingPuzzle() {
   const [isActive, setIsActive]       = useState(false);
 
   const stateRef = useRef({ grid, showRules, cracked, isActive, size });
+  const gameRef = useRef(null);
   useEffect(() => {
     stateRef.current = { grid, showRules, cracked, isActive, size };
   }, [grid, showRules, cracked, isActive, size]);
@@ -130,18 +131,33 @@ export default function MovingPuzzle() {
       const { grid: g, showRules: r, cracked: c, isActive: act, size: s } = stateRef.current;
       if (!act || r || c) return;
       if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
-      const emptyIdx = g.indexOf(0);
-      const rowE = Math.floor(emptyIdx / s), colE = emptyIdx % s;
-      let target = -1;
-      if (e.key === 'ArrowUp'    && rowE < s - 1) target = emptyIdx + s;
-      if (e.key === 'ArrowDown'  && rowE > 0)     target = emptyIdx - s;
-      if (e.key === 'ArrowLeft'  && colE < s - 1) target = emptyIdx + 1;
-      if (e.key === 'ArrowRight' && colE > 0)     target = emptyIdx - 1;
-      if (target !== -1) moveTile(target);
+      
+      let dir = null;
+      if (e.key === 'ArrowUp') dir = 'up';
+      if (e.key === 'ArrowDown') dir = 'down';
+      if (e.key === 'ArrowLeft') dir = 'left';
+      if (e.key === 'ArrowRight') dir = 'right';
+      
+      if (dir) handleDirection(dir);
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [moveTile]);
+
+  const handleDirection = useCallback((dir) => {
+    const { grid: g, showRules: r, cracked: c, isActive: act, size: s } = stateRef.current;
+    if (!act || r || c) return;
+    const emptyIdx = g.indexOf(0);
+    const rowE = Math.floor(emptyIdx / s), colE = emptyIdx % s;
+    let target = -1;
+    if (dir === 'up'    && rowE < s - 1) target = emptyIdx + s;
+    if (dir === 'down'  && rowE > 0)     target = emptyIdx - s;
+    if (dir === 'left'  && colE < s - 1) target = emptyIdx + 1;
+    if (dir === 'right' && colE > 0)     target = emptyIdx - 1;
+    if (target !== -1) moveTile(target);
+  }, [moveTile]);
+
+  useGameMobileFix(isActive, gameRef, handleDirection);
 
   const scramble = (lvlKey = level) => {
     triggerGlitch();
@@ -174,12 +190,15 @@ export default function MovingPuzzle() {
 
   return (
     <motion.div
-      tabIndex={0}
+      ref={gameRef}
+      tabIndex={-1}
+      className={isActive ? 'mobile-fullscreen-active' : ''}
       onFocus={() => setIsActive(true)}
       onBlur={() => setIsActive(false)}
       animate={isGlitching ? { x: [0,-2,2,-1,1,0], opacity:[1,0.8,1] } : {}}
       style={{ ...simCard(isActive, cracked), cursor: 'default' }}
     >
+      {isActive && <MobileDPad onDirection={handleDirection} />}
       {/* ── Header ── */}
       <div style={simHeader(ACCENT_RGB)}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -191,9 +210,9 @@ export default function MovingPuzzle() {
           </span>
         </div>
         <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-          <button onClick={() => setShowHint(!showHint)} style={simIconBtn(showHint)} title="Hint"><HelpCircle size={13}/></button>
-          <button onClick={() => setShowRules(true)}     style={simIconBtn(false)}   title="Rules"><Info       size={13}/></button>
-          <button onClick={() => scramble()}             style={simIconBtn(false)}   title="Reset"><RefreshCw  size={13}/></button>
+          <button onClick={() => setShowHint(!showHint)} className="sim-icon-btn" style={simIconBtn(showHint)} title="Hint"><HelpCircle size={13}/></button>
+          <button onClick={() => setShowRules(true)}     className="sim-icon-btn" style={simIconBtn(false)}   title="Rules"><Info       size={13}/></button>
+          <button onClick={() => scramble()}             className="sim-icon-btn" style={simIconBtn(false)}   title="Reset"><RefreshCw  size={13}/></button>
         </div>
       </div>
 
@@ -315,7 +334,7 @@ export default function MovingPuzzle() {
           >
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
               <span style={{ fontSize:10, fontWeight:900, color:SIM.green, letterSpacing:1.5 }}>DECRYPTION_PROTOCOL</span>
-              <button onClick={() => setShowRules(false)} style={simIconBtn()}><X size={14}/></button>
+              <button onClick={() => setShowRules(false)} className="sim-icon-btn" style={simIconBtn()}><X size={14}/></button>
             </div>
             <div style={{ flex:1, fontSize:11, color:SIM.txSecondary, lineHeight:1.8, fontFamily:SIM.font }}>
               {'> CLICK tile or use ARROW KEYS to shift'}<br/>

@@ -6,12 +6,9 @@ const tabs = [
   { to: '/explorer',     icon: Search,          label: 'Gym Explorer' },
   { to: '/data-health',  icon: HeartPulse,      label: 'Data Health' },
   { to: '/enrichment',   icon: Zap,             label: 'Enrichment' },
-  { to: '/chains',       icon: Link2,           label: 'Chains', badgeId: 'chainCount' },
-  { to: '/jobs',         icon: ClipboardList,   label: 'Jobs' },
   { to: '/globe',        icon: Globe2,          label: 'Globe' },
   { to: '/media',        icon: ImageIcon,       label: 'Media' },
   { to: '/simulations',  icon: Gamepad2,        label: 'Simulations' },
-  { to: '/system',       icon: Settings,        label: 'System' },
 ];
 
 export default function TabNav({ badges = {} }) {

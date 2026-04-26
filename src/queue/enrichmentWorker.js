@@ -17,6 +17,7 @@ require('dotenv').config();
 
 const { connectDB } = require('../db/connection');
 const Gym = require('../db/gymModel');
+const SystemState = require('../db/systemStateModel');
 const EnrichmentLog = require('../db/enrichmentLogModel');
 const { BrowserManager, scrapeGymDetail, scrapeSelective } = require('../scraper/googleMapsScraper');
 const { scrapeWebsitePhotos } = require('../scraper/websiteScraper');
@@ -250,7 +251,8 @@ async function runLoop() {
     checkDayRollover();
 
     // ── Pause check ──────────────────────────────────────────────────────
-    if (await isPaused()) {
+    let sysState = await SystemState.getGlobalState().catch(() => ({ globalPause: false }));
+    if (await isPaused() || sysState.globalPause) {
       if (browser) {
         await browser.close();
         browser = null;
@@ -261,9 +263,15 @@ async function runLoop() {
         processedToday,
       });
       logger.info('  ⏸️  Enrichment paused — waiting for resume signal...');
-      while (await isPaused() && !isShuttingDown) {
+      
+      let loopPaused = true;
+      while (loopPaused && !isShuttingDown) {
         await sleep(PAUSE_POLL_INTERVAL);
+        sysState = await SystemState.getGlobalState().catch(() => ({ globalPause: false }));
+        const enrichPaused = await isPaused();
+        if (!enrichPaused && !sysState.globalPause) loopPaused = false;
       }
+      
       if (isShuttingDown) break;
       logger.info('  ▶️  Enrichment resumed');
       await setStatus({ state: 'running', processedTotal, processedToday });

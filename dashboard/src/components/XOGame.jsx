@@ -1,8 +1,8 @@
 // <XOGame onWin={(w) => console.log(w + ' won!')} onDraw={() => console.log('draw')} />
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, RotateCcw, Cpu, Users } from 'lucide-react';
-import { SIM, simCard, simHeader, simFooter, simIconBtn, simStatus } from './simUI';
+import { SIM, simCard, simHeader, simFooter, simIconBtn, simStatus, useGameMobileFix } from './simUI';
 
 const ACCENT_RGB = '249,115,22'; // orange
 const WIN_LINES  = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
@@ -98,6 +98,9 @@ export default function XOGame({ onWin, onDraw }) {
   const [thinking, setThinking]   = useState(false);
   const [animCells, setAnimCells] = useState(new Set());
   const [isActive, setIsActive]   = useState(false);
+  const gameRef                   = useRef(null);
+
+  useGameMobileFix(isActive, gameRef);
 
   useEffect(() => { injectXOStyles(); }, []);
 
@@ -166,7 +169,14 @@ export default function XOGame({ onWin, onDraw }) {
   // ── Mode Picker ──────────────────────────────────────────────────────────
   if (!mode) {
     return (
-      <div style={{ ...simCard(false, false), cursor:'default' }}>
+      <div 
+        ref={gameRef}
+        tabIndex={-1}
+        onFocus={() => setIsActive(true)}
+        onBlur={() => setIsActive(false)}
+        className={isActive ? 'mobile-fullscreen-active' : ''}
+        style={{ ...simCard(isActive, false), cursor:'default' }}
+      >
         <div style={simHeader(ACCENT_RGB)}>
           <span style={{ fontSize:9, fontWeight:900, color:SIM.orange, letterSpacing:1.5 }}>TACTICAL_GRID · SELECT_MODE</span>
         </div>
@@ -214,7 +224,9 @@ export default function XOGame({ onWin, onDraw }) {
   // ── Game View ─────────────────────────────────────────────────────────────
   return (
     <div
-      tabIndex={0}
+      ref={gameRef}
+      tabIndex={-1}
+      className={isActive ? 'mobile-fullscreen-active' : ''}
       onFocus={() => setIsActive(true)}
       onBlur={() => setIsActive(false)}
       style={{ ...simCard(isActive, false), cursor:'default' }}
@@ -228,8 +240,8 @@ export default function XOGame({ onWin, onDraw }) {
           </span>
         </div>
         <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-          <button onClick={newGame}     style={simIconBtn(false)} title="New game"><RefreshCw  size={13}/></button>
-          <button onClick={changeMode}  style={simIconBtn(false)} title="Change mode"><RotateCcw size={13}/></button>
+          <button onClick={newGame}     className="sim-icon-btn" style={simIconBtn(false)} title="New game"><RefreshCw  size={13}/></button>
+          <button onClick={changeMode}  className="sim-icon-btn" style={simIconBtn(false)} title="Change mode"><RotateCcw size={13}/></button>
         </div>
       </div>
 
@@ -294,6 +306,7 @@ export default function XOGame({ onWin, onDraw }) {
         </span>
         <button
           onClick={resetScores}
+          className="sim-icon-btn"
           style={{ ...simIconBtn(false), fontSize:8, fontFamily:SIM.font, gap:4, letterSpacing:0.5 }}
         >
           RESET SCORES

@@ -1,14 +1,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { Building2, MessageCircle, Camera, Zap, Target, Link2, Activity, TrendingUp } from 'lucide-react';
+import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, Sector } from 'recharts';
+import { Building2, MessageCircle, Camera, Zap, Target, Link2, Activity, TrendingUp, XCircle, RefreshCw } from 'lucide-react';
 import StatCard from '../components/StatCard';
-import EventFeed from '../components/EventFeed';
 import CrawlActivity from '../components/CrawlActivity';
 import EnrichmentPanel from '../components/EnrichmentPanel';
 import Skeleton from '../components/Skeleton';
 import GymRow from '../components/GymRow';
 import GymDrawer from '../components/GymDrawer';
+import SystemPanel from '../components/SystemPanel';
+import JobsPanel from '../components/JobsPanel';
+import ChainsPanel from '../components/ChainsPanel';
+import NetworkTelemetry from '../components/NetworkTelemetry';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 
@@ -22,15 +25,44 @@ function formatCategory(cat) {
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
-      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{payload[0].payload.name || payload[0].payload._id}</div>
-      <div style={{ color: 'var(--text-muted)' }}>{payload[0].value} gyms</div>
+    <div style={{
+      background: 'var(--tooltip-glass-bg)',
+      backdropFilter: 'blur(16px)',
+      border: '1px solid var(--card-glass-border)',
+      borderRadius: 12,
+      padding: '12px 16px',
+      fontSize: 13,
+      boxShadow: 'var(--shadow-lg)'
+    }}>
+      <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: payload[0].payload.fill || CHART_COLORS[0], boxShadow: `0 0 8px ${payload[0].payload.fill || CHART_COLORS[0]}` }} />
+        {payload[0].payload.name || payload[0].payload._id}
+      </div>
+      <div style={{ color: 'var(--text-secondary)', fontFamily: 'var(--mono)' }}>
+        <span style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: 15 }}>{payload[0].value.toLocaleString()}</span> venues
+      </div>
     </div>
   );
 };
 
+const renderActiveShape = (props) => {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, value } = props;
+  return (
+    <g>
+      <text x={cx} y={cy - 10} dy={8} textAnchor="middle" fill="var(--text-primary)" style={{ fontSize: 24, fontWeight: 900, fontFamily: 'var(--mono)', textShadow: `0 0 12px ${fill}88` }}>
+        {value.toLocaleString()}
+      </text>
+      <text x={cx} y={cy + 14} dy={8} textAnchor="middle" fill="var(--text-muted)" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' }}>
+        {payload.name}
+      </text>
+      <Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 8} startAngle={startAngle} endAngle={endAngle} fill={fill} filter="url(#glow)" />
+      <Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 2} startAngle={startAngle} endAngle={endAngle} fill={fill} />
+    </g>
+  );
+};
+
 export default function Overview() {
-  const { events, setChainsCache, crawlActivity } = useApp();
+  const { events, setChainsCache, crawlActivity, toast } = useApp();
   const [stats, setStats] = useState(null);
   const [queueStats, setQueueStats] = useState(null);
   const [mediaQueueStats, setMediaQueueStats] = useState(null);
@@ -39,17 +71,26 @@ export default function Overview() {
   const [jobs, setJobs] = useState([]);
   const [selectedGym, setSelectedGym] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isGlobalPaused, setIsGlobalPaused] = useState(false);
+  const [crawlPace, setCrawlPace] = useState('normal');
+  const [isMediaPaused, setIsMediaPaused] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [gymRes, queueRes, chainRes, latestRes, jobsRes] = await Promise.all([
+      const [gymRes, queueRes, chainRes, latestRes, jobsRes, stateRes] = await Promise.all([
         api.get('/api/gyms/stats').catch(() => null),
         api.get('/api/crawl/queue/stats').catch(() => null),
         api.get('/api/chains').catch(() => ({ chains: [] })),
         api.get('/api/gyms?limit=6&sortBy=createdAt').catch(() => null),
         api.get('/api/crawl/jobs?limit=6').catch(() => null),
+        api.get('/api/system/state').catch(() => ({ state: {} }))
       ]);
 
+      if (stateRes?.state?.globalPause !== undefined) setIsGlobalPaused(stateRes.state.globalPause);
+      if (stateRes?.state?.crawlPace !== undefined) setCrawlPace(stateRes.state.crawlPace);
+      if (stateRes?.state?.mediaQueuePaused !== undefined) setIsMediaPaused(stateRes.state.mediaQueuePaused);
+      
       if (gymRes?.success) setStats(gymRes.stats);
       if (queueRes?.success) {
         setQueueStats(queueRes.queue);
@@ -68,21 +109,60 @@ export default function Overview() {
   }, [setChainsCache]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-  useEffect(() => {
-    const i1 = setInterval(() => api.get('/api/gyms/stats').then(r => r?.success && setStats(r.stats)).catch(() => {}), 30000);
-    const i2 = setInterval(() => api.get('/api/crawl/jobs?limit=6').then(r => r?.success && setJobs(r.jobs || [])).catch(() => {}), 15000);
-    const i3 = setInterval(() => api.get('/api/gyms?limit=6&sortBy=createdAt').then(r => r?.success && setLatestGyms(r.gyms || [])).catch(() => {}), 20000);
-    return () => { clearInterval(i1); clearInterval(i2); clearInterval(i3); };
-  }, []);
 
-  // Also refresh jobs on relevant SSE events
+  // Refresh data based on real-time SSE events instead of interval polling
   useEffect(() => {
-    if (events.length > 0 && events[0]?.type?.startsWith('job:') && events[0]?.type !== 'job:progress') {
-      setTimeout(() => api.get('/api/crawl/jobs?limit=6').then(r => r?.success && setJobs(r.jobs || [])).catch(() => {}), 500);
+    if (events.length > 0) {
+      const latest = events[0];
+      const type = latest?.type || '';
+      
+      // Update jobs when a job starts/completes/fails
+      if (type.startsWith('job:') && type !== 'job:progress') {
+        setTimeout(() => api.get('/api/crawl/jobs?limit=6').then(r => r?.success && setJobs(r.jobs || [])).catch(() => {}), 500);
+      }
+      
+      // Update gym stats and latest gyms when a gym is created or updated
+      if (type.startsWith('gym:')) {
+        setTimeout(() => {
+          api.get('/api/gyms/stats').then(r => r?.success && setStats(r.stats)).catch(() => {});
+          api.get('/api/gyms?limit=6&sortBy=createdAt').then(r => r?.success && setLatestGyms(r.gyms || [])).catch(() => {});
+        }, 500);
+      }
     }
   }, [events]);
 
   if (loading) return <div className="container"><Skeleton height={100} count={3} /></div>;
+
+  const toggleGlobalPause = async () => {
+    try {
+      const res = await api.post('/api/system/global-pause', { paused: !isGlobalPaused });
+      setIsGlobalPaused(!isGlobalPaused);
+      if (toast) toast(res?.message || (isGlobalPaused ? 'System Resumed' : 'System Standby Activated'), isGlobalPaused ? 'success' : 'warning');
+    } catch { if (toast) toast('Failed to update system state', 'error'); }
+  };
+
+  const changePace = async (e) => {
+    const pace = e.target.value;
+    try {
+      const res = await api.post('/api/system/pace', { pace });
+      setCrawlPace(pace);
+      if (toast) toast(res?.message || 'Pace updated', 'info');
+    } catch { if (toast) toast('Failed to update pace', 'error'); }
+  };
+
+  const toggleMediaPause = async () => {
+    try {
+      if (isMediaPaused) {
+        const res = await api.post('/api/system/media/queue/resume');
+        setIsMediaPaused(false);
+        if (toast) toast(res?.message || 'Media downloading resumed', 'success');
+      } else {
+        const res = await api.post('/api/system/media/queue/pause');
+        setIsMediaPaused(true);
+        if (toast) toast(res?.message || 'Media downloading paused', 'warning');
+      }
+    } catch { if (toast) toast('Failed to update media state', 'error'); }
+  };
 
   const cityData = (stats?.topCities || []).slice(0, 8).map(c => ({ name: c._id || 'Unknown', count: c.count }));
   const catData = (stats?.byCategory || []).slice(0, 8).map(c => ({ name: formatCategory(c._id), value: c.count }));
@@ -95,34 +175,105 @@ export default function Overview() {
     <motion.div className="container" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
       {/* ── Command Center Header ────── */}
       <div style={{
-        background: 'linear-gradient(135deg, rgba(15,23,42,0.8) 0%, rgba(15,23,42,0.4) 100%)',
+        background: 'var(--header-glass-bg)',
         backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(139, 92, 246, 0.2)',
+        border: '1px solid var(--border-glow)',
         borderRadius: 16,
         padding: '24px 30px',
         marginBottom: 20,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+        boxShadow: 'var(--shadow)',
         position: 'relative',
         overflow: 'hidden'
       }}>
         {/* Decorative Grid Background */}
-        <div style={{ position: 'absolute', inset: 0, opacity: 0.1, backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '20px 20px', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', inset: 0, opacity: 0.1, backgroundImage: 'linear-gradient(var(--text-muted) 1px, transparent 1px), linear-gradient(90deg, var(--text-muted) 1px, transparent 1px)', backgroundSize: '20px 20px', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)' }} />
         
-        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ padding: 12, background: 'rgba(139, 92, 246, 0.15)', borderRadius: 12, border: '1px solid rgba(139, 92, 246, 0.3)' }}>
-            <Target size={28} style={{ color: 'var(--accent)' }} />
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div style={{ 
+            padding: 16, 
+            background: 'rgba(139, 92, 246, 0.1)', 
+            borderRadius: 16, 
+            border: '1px solid rgba(139, 92, 246, 0.3)',
+            boxShadow: '0 0 24px rgba(139, 92, 246, 0.15)'
+          }}>
+            <Target size={32} style={{ color: 'var(--accent)', filter: 'drop-shadow(0 0 8px rgba(167, 139, 250, 0.4))' }} />
           </div>
           <div>
-            <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0, letterSpacing: '-0.5px', color: '#fff', textShadow: '0 0 20px rgba(139,92,246,0.5)' }}>
+            <h1 style={{ 
+              fontSize: 32, 
+              fontWeight: 900, 
+              margin: 0, 
+              letterSpacing: '-1px', 
+              background: 'var(--header-text-gradient)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              textShadow: 'var(--header-text-shadow)' 
+            }}>
               ATLAS INTELLIGENCE COMMAND
             </h1>
-            <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700, letterSpacing: 3, textTransform: 'uppercase', fontFamily: 'var(--mono)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="live-dot" style={{ width: 6, height: 6, background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 8px var(--success)', animation: 'pulse-dot 2s infinite' }} />
+            <div style={{ fontSize: 13, color: '#a78bfa', fontWeight: 700, letterSpacing: 3, textTransform: 'uppercase', fontFamily: 'var(--mono)', marginTop: 6, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="live-dot" style={{ width: 8, height: 8, background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 12px var(--success)', animation: 'pulse-dot 2s infinite' }} />
               System Online & Processing
             </div>
           </div>
         </div>
+
+        {/* System Controls */}
+        <div style={{ position: 'absolute', right: 30, top: '50%', transform: 'translateY(-50%)', zIndex: 2, display: 'flex', gap: 12 }}>
+          <select 
+            className="btn" 
+            style={{ 
+              appearance: 'none', background: 'rgba(255,255,255,0.05)', color: 'white', 
+              border: '1px solid var(--border)', textAlign: 'center', cursor: 'pointer',
+              fontWeight: 600, padding: '8px 16px', borderRadius: 8
+            }} 
+            value={crawlPace} 
+            onChange={changePace}
+          >
+            <option value="slow" style={{ color: 'black' }}>Pace: Slow</option>
+            <option value="normal" style={{ color: 'black' }}>Pace: Normal</option>
+            <option value="fast" style={{ color: 'black' }}>Pace: Fast</option>
+          </select>
+          
+          <button 
+            onClick={toggleMediaPause}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px',
+              borderRadius: 8, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border)',
+              background: isMediaPaused ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.05)',
+              color: isMediaPaused ? 'var(--primary)' : 'white',
+              transition: 'all 0.2s'
+            }}
+          >
+            {isMediaPaused ? <RefreshCw size={14} /> : <Camera size={14} />}
+            {isMediaPaused ? 'Media Paused' : 'Pause Media'}
+          </button>
+          
+          <button 
+            onClick={toggleGlobalPause}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px',
+              borderRadius: 8, fontWeight: 600, cursor: 'pointer', border: 'none',
+              background: isGlobalPaused ? 'var(--primary)' : 'var(--warning)',
+              color: 'white', boxShadow: `0 0 12px ${isGlobalPaused ? 'rgba(59, 130, 246, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`,
+              transition: 'all 0.2s'
+            }}
+          >
+            {isGlobalPaused ? <RefreshCw size={14} /> : <XCircle size={14} />}
+            {isGlobalPaused ? 'System Resumed' : 'System Standby'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── System Activity (Live Crawler & Enrichment) ────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: 20, marginBottom: 24, alignItems: 'stretch' }}>
+        {(crawlActivity.status !== 'idle' || crawlActivity.recentActions.length > 0) ? (
+          <CrawlActivity />
+        ) : (
+          <NetworkTelemetry stats={stats} queueStats={queueStats} />
+        )}
+        <EnrichmentPanel />
       </div>
 
       {/* ── Stat Cards ────── */}
@@ -144,69 +295,82 @@ export default function Overview() {
 
       {/* ── Charts ────── */}
       <div className="grid-2" style={{ marginTop: 8 }}>
-        <div className="card" style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 16 }}>
-            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Building2 size={16} color="var(--accent)" /> Top Geographies</span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>
-              {cityData.reduce((s, c) => s + c.count, 0)} total
+        <div className="card">
+          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 16 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+              <div style={{ padding: 6, background: 'rgba(59, 130, 246, 0.1)', borderRadius: 8, border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                <Building2 size={16} color="#3b82f6" />
+              </div>
+              Top Geographies
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--mono)', background: 'var(--bg-surface)', padding: '4px 10px', borderRadius: 12 }}>
+              {cityData.reduce((s, c) => s + c.count, 0).toLocaleString()} Total
             </span>
           </div>
           {cityData.length > 0 ? (() => {
             const max = cityData[0]?.count || 1;
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}>
                 {cityData.map((c, i) => {
                   const pct = Math.round((c.count / max) * 100);
-                  // Shorten "Kyiv City, Kyiv, Ukraine" → "Kyiv City" + "Ukraine"
                   const parts = c.name.split(',').map(p => p.trim());
                   const city    = parts[0] || c.name;
                   const country = parts[parts.length - 1] || '';
                   const color   = CHART_COLORS[i % CHART_COLORS.length];
                   return (
-                    <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <motion.div 
+                      key={c.name} 
+                      whileHover={{ scale: 1.01, backgroundColor: 'var(--row-hover)' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px', borderRadius: 8, transition: 'background-color 0.2s', cursor: 'default' }}
+                    >
                       {/* Rank badge */}
                       <div style={{
-                        width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                        background: `${color}22`, color, fontWeight: 800,
-                        fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                        background: `linear-gradient(135deg, ${color}22, ${color}11)`, 
+                        border: `1px solid ${color}44`, color, fontWeight: 900,
+                        fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: `0 0 10px ${color}22`
                       }}>
                         {i + 1}
                       </div>
                       {/* Name + bar */}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                          <div style={{ minWidth: 0 }}>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                          <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
                               {city}
                             </span>
                             {country && city !== country && (
-                              <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 5 }}>
+                              <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-surface)', padding: '2px 6px', borderRadius: 4 }}>
                                 {country}
                               </span>
                             )}
                           </div>
                           <span style={{
-                            fontSize: 12, fontWeight: 700, fontFamily: 'var(--mono)',
-                            color, flexShrink: 0, marginLeft: 8,
+                            fontSize: 13, fontWeight: 800, fontFamily: 'var(--mono)',
+                            color: 'var(--text-primary)', flexShrink: 0, marginLeft: 8,
                           }}>
                             {c.count.toLocaleString()}
                           </span>
                         </div>
                         {/* Animated fill bar */}
-                        <div style={{ height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ height: 6, background: 'var(--bg-surface)', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--border)' }}>
                           <motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `${pct}%` }}
-                            transition={{ duration: 0.6, delay: i * 0.07, ease: 'easeOut' }}
+                            transition={{ duration: 0.8, delay: i * 0.1, ease: [0.25, 1, 0.5, 1] }}
                             style={{
-                              height: '100%', borderRadius: 3,
-                              background: `linear-gradient(90deg, ${color}, ${color}99)`,
-                              boxShadow: `0 0 6px ${color}55`,
+                              height: '100%', borderRadius: 4,
+                              background: `linear-gradient(90deg, ${color}, ${color}dd)`,
+                              boxShadow: `0 0 8px ${color}88`,
+                              position: 'relative'
                             }}
-                          />
+                          >
+                            <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 20, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5))', opacity: 0.5 }} />
+                          </motion.div>
                         </div>
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })}
               </div>
@@ -214,43 +378,111 @@ export default function Overview() {
           })() : <div className="empty-state">No city data</div>}
         </div>
 
-        <div className="card" style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 16 }}>
-            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Activity size={16} color="var(--accent)" /> Categories</span>
+        <div className="card">
+          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 16 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+              <div style={{ padding: 6, background: 'rgba(139, 92, 246, 0.1)', borderRadius: 8, border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+                <Activity size={16} color="#8b5cf6" />
+              </div>
+              Category Distribution
+            </span>
           </div>
           {catData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={320}>
               <PieChart>
-                <Pie data={catData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} strokeWidth={0}>
-                  {catData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                <defs>
+                  <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="4" result="blur" />
+                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                  </filter>
+                  {CHART_COLORS.map((color, i) => (
+                    <linearGradient id={`grad-${i}`} x1="0" y1="0" x2="1" y2="1" key={i}>
+                      <stop offset="0%" stopColor={color} stopOpacity={1} />
+                      <stop offset="100%" stopColor={color} stopOpacity={0.6} />
+                    </linearGradient>
+                  ))}
+                </defs>
+                <Pie 
+                  data={catData} 
+                  dataKey="value" 
+                  nameKey="name" 
+                  cx="50%" 
+                  cy="45%" 
+                  innerRadius={70} 
+                  outerRadius={105} 
+                  paddingAngle={4} 
+                  stroke="none"
+                  activeIndex={activeIndex}
+                  activeShape={renderActiveShape}
+                  onMouseEnter={(_, index) => setActiveIndex(index)}
+                  animationDuration={1000}
+                  animationEasing="ease-out"
+                >
+                  {catData.map((_, i) => (
+                    <Cell 
+                      key={i} 
+                      fill={`url(#grad-${i % CHART_COLORS.length})`} 
+                      style={{ cursor: 'pointer', filter: activeIndex === i ? 'drop-shadow(0 0 8px var(--text-muted))' : 'none' }}
+                    />
+                  ))}
                 </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend verticalAlign="bottom" height={36} formatter={(v) => <span style={{ fontSize: 10, color: '#94a3b8' }}>{v}</span>} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'transparent' }} />
+                <Legend 
+                  verticalAlign="bottom" 
+                  height={40} 
+                  iconType="circle"
+                  formatter={(v, entry, index) => (
+                    <span style={{ 
+                      fontSize: 11, 
+                      fontWeight: activeIndex === index ? 700 : 500,
+                      color: activeIndex === index ? 'var(--text-primary)' : '#94a3b8',
+                      transition: 'color 0.2s',
+                      cursor: 'pointer'
+                    }}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    >
+                      {v}
+                    </span>
+                  )} 
+                />
               </PieChart>
             </ResponsiveContainer>
           ) : <div className="empty-state">No category data</div>}
         </div>
       </div>
 
+      {/* ── Reconnaissance Targets (Chains) ────── */}
+      <ChainsPanel onSelectGym={setSelectedGym} />
+
       {/* ── Latest Gyms + Jobs ────── */}
       <div className="grid-2" style={{ marginTop: 8 }}>
-        <div className="card" style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 12 }}>
-            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Link2 size={16} color="var(--success)" /> Latest Venues</span>
+        <div className="card">
+          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 12 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+              <div style={{ padding: 6, background: 'rgba(16, 185, 129, 0.1)', borderRadius: 8, border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                <Link2 size={16} color="#10b981" />
+              </div>
+              Latest Venues
+            </span>
           </div>
-          <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+          <div style={{ maxHeight: 280, overflowY: 'auto', paddingRight: 4 }}>
             {latestGyms.length > 0 ? latestGyms.map(g => (
               <GymRow key={g._id} gym={g} onClick={setSelectedGym} />
             )) : <div className="empty-state">No gyms yet</div>}
           </div>
         </div>
 
-        <div className="card" style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 12 }}>
-            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Zap size={16} color="var(--warning)" /> Active & Recent Jobs</span>
+        <div className="card">
+          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 12 }}>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+              <div style={{ padding: 6, background: 'rgba(245, 158, 11, 0.1)', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                <Zap size={16} color="#f59e0b" />
+              </div>
+              Active & Recent Jobs
+            </span>
           </div>
-          <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-            {jobs.length > 0 ? jobs.map(j => {
+          <div style={{ maxHeight: 300, overflowY: 'auto', paddingRight: 4 }}>
+            {jobs.length > 0 ? jobs.map((j, i) => {
               const p = j.progress || {};
               const total = p.total || 0;
               const scraped = (p.scraped || 0) + (p.failed || 0) + (p.skipped || 0);
@@ -259,51 +491,63 @@ export default function Overview() {
               const typeIcon = j.type === 'chain' ? '🔗' : j.type === 'gym_name' ? '🏋' : '🏙️';
               const errorCount = j.errorCount || (j.jobErrors?.length) || 0;
               return (
-                <div key={j.jobId} style={{ padding: '10px 0', borderBottom: '1px solid rgba(75,85,99,0.15)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 16 }}>{typeIcon}</span>
+                <motion.div 
+                  key={j.jobId} 
+                  whileHover={{ backgroundColor: 'var(--row-hover)' }}
+                  style={{ 
+                    padding: '12px 10px', 
+                    borderBottom: i === jobs.length - 1 ? 'none' : '1px solid var(--border)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 12,
+                    borderRadius: 8,
+                    transition: 'background-color 0.2s'
+                  }}
+                >
+                  <div style={{ 
+                    width: 32, height: 32, borderRadius: 8, background: 'var(--bg-surface)', 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 
+                  }}>
+                    {typeIcon}
+                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 600, fontSize: 13 }}>{name}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>{name}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         {errorCount > 0 && <span className="error-badge">{errorCount}</span>}
-                        <span className={`badge-status ${j.status}`} style={{ fontSize: 10 }}>{j.status}</span>
+                        <span className={`badge-status ${j.status}`} style={{ fontSize: 10, padding: '2px 6px' }}>{j.status}</span>
                       </div>
                     </div>
                     {j.status === 'running' && (
-                      <div className="progress-bar" style={{ marginTop: 6 }}>
-                        <div className="progress-fill" style={{ width: `${pct}%` }} />
+                      <div className="progress-bar" style={{ marginTop: 8, marginBottom: 4, height: 4, background: 'var(--bg-surface)', border: 'none' }}>
+                        <div className="progress-fill" style={{ width: `${pct}%`, background: 'var(--warning)', boxShadow: '0 0 8px var(--warning)' }} />
                       </div>
                     )}
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'var(--mono)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <span>Total:{total}</span>
-                      <span style={{ color: 'var(--success)' }}>New:{p.newGyms || 0}</span>
-                      <span style={{ color: 'var(--danger)' }}>Fail:{p.failed || 0}</span>
-                      {p.batches > 0 && <span style={{ color: 'var(--accent)' }}>Batches:{p.batchesDone || 0}/{p.batches}</span>}
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'var(--mono)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ color: 'var(--text-secondary)' }}>TOT</span> {total}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ color: 'var(--success)' }}>NEW</span> {p.newGyms || 0}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ color: 'var(--danger)' }}>FAIL</span> {p.failed || 0}</span>
+                      {p.batches > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ color: 'var(--accent)' }}>BAT</span> {p.batchesDone || 0}/{p.batches}</span>}
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             }) : <div className="empty-state"><div className="empty-state-icon">📭</div><div>No jobs</div></div>}
           </div>
         </div>
       </div>
 
-      {/* ── System Activity (Live Crawler & Enrichment) ────── */}
-      <div className="grid-2" style={{ marginTop: 8 }}>
-        {(crawlActivity.status !== 'idle' || crawlActivity.recentActions.length > 0) && (
-          <CrawlActivity />
-        )}
-        <EnrichmentPanel />
+      {/* ── System Actions ────── */}
+      <SystemPanel />
+
+      {/* ── Full Job History ────── */}
+      <div style={{ marginTop: 24 }}>
+        <JobsPanel />
       </div>
 
-      {/* ── Event Feed ────── */}
-      <div className="card" style={{ marginTop: 8, background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
-        <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 16 }}>
-          <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><MessageCircle size={16} color="var(--accent)" /> Live Event Feed</span>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>{events.length} events</span>
-        </div>
-        <EventFeed />
-      </div>
+
+
+
 
       {/* ── Gym Drawer ────── */}
       {selectedGym && <GymDrawer gymId={selectedGym} onClose={() => setSelectedGym(null)} />}

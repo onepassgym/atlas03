@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, RefreshCw, Zap, Clock, Database, ArrowRight } from 'lucide-react';
+import { Play, Pause, RefreshCw, Zap, Clock, Database, ArrowRight, Activity } from 'lucide-react';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 
@@ -84,14 +84,12 @@ export default function EnrichmentPanel() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
       style={{ 
-        background: 'rgba(30, 41, 59, 0.4)', 
-        border: '1px solid rgba(255,255,255,0.05)',
         overflow: 'hidden',
         position: 'relative'
       }}
     >
       {/* Header */}
-      <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12, marginBottom: 12 }}>
+      <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Database size={16} color="var(--accent)" /> Enrichment Engine</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -122,37 +120,69 @@ export default function EnrichmentPanel() {
         </button>
       </div>
 
-      {/* Stats Row */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div className="enrich-stat">
-          <span className="enrich-stat-value" style={{ color: 'var(--success)' }}>
-            {status?.processedToday ?? 0}
-          </span>
-          <span className="enrich-stat-label">Today</span>
+      {/* Main Content Row */}
+      <div style={{ display: 'flex', gap: 24, marginBottom: 20 }}>
+        {/* Left: Progress Gauge */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '0 10px' }}>
+          <div style={{ position: 'relative', width: 80, height: 80 }}>
+            <svg width="80" height="80" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="45" fill="none" stroke="var(--border)" strokeWidth="8" />
+              <motion.circle 
+                cx="50" cy="50" r="45" fill="none" stroke="var(--success)" strokeWidth="8" 
+                strokeDasharray="283"
+                initial={{ strokeDashoffset: 283 }}
+                animate={{ strokeDashoffset: 283 - (283 * Math.min(1, (status?.processedToday || 0) / 1000)) }}
+                transition={{ duration: 1.5, ease: "easeOut" }}
+                strokeLinecap="round"
+                style={{ filter: 'drop-shadow(0 0 4px var(--success))' }}
+              />
+            </svg>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>{status?.processedToday ?? 0}</span>
+              <span style={{ fontSize: 8, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Today</span>
+            </div>
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Daily Goal: 1k</div>
         </div>
-        <div className="enrich-stat">
-          <span className="enrich-stat-value" style={{ color: 'var(--accent)' }}>
-            {status?.processedTotal ?? 0}
-          </span>
-          <span className="enrich-stat-label">Total</span>
-        </div>
-        <div className="enrich-stat">
-          <span className="enrich-stat-value" style={{ color: 'var(--cyan)' }}>
-            {status?.totalEligibleGyms ?? 0}
-          </span>
-          <span className="enrich-stat-label">Eligible</span>
-        </div>
-        <div className="enrich-stat">
-          <span className="enrich-stat-value" style={{ color: 'var(--warning)' }}>
-            {status?.staleGyms ?? 0}
-          </span>
-          <span className="enrich-stat-label">Stale (7d+)</span>
-        </div>
-        <div className="enrich-stat">
-          <span className="enrich-stat-value" style={{ color: 'var(--orange)' }}>
-            {status?.priorityQueueLength ?? 0}
-          </span>
-          <span className="enrich-stat-label">Priority</span>
+
+        {/* Right: Stats Grid & Sparkline */}
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+            <div className="enrich-stat" style={{ padding: '8px 4px' }}>
+              <span className="enrich-stat-value" style={{ color: 'var(--accent)', fontSize: 16 }}>{status?.processedTotal ?? 0}</span>
+              <span className="enrich-stat-label" style={{ fontSize: 9 }}>Total</span>
+            </div>
+            <div className="enrich-stat" style={{ padding: '8px 4px' }}>
+              <span className="enrich-stat-value" style={{ color: 'var(--cyan)', fontSize: 16 }}>{status?.totalEligibleGyms ?? 0}</span>
+              <span className="enrich-stat-label" style={{ fontSize: 9 }}>Eligible</span>
+            </div>
+            <div className="enrich-stat" style={{ padding: '8px 4px' }}>
+              <span className="enrich-stat-value" style={{ color: 'var(--warning)', fontSize: 16 }}>{status?.staleGyms ?? 0}</span>
+              <span className="enrich-stat-label" style={{ fontSize: 9 }}>Stale</span>
+            </div>
+            <div className="enrich-stat" style={{ padding: '8px 4px' }}>
+              <span className="enrich-stat-value" style={{ color: 'var(--orange)', fontSize: 16 }}>{status?.priorityQueueLength ?? 0}</span>
+              <span className="enrich-stat-label" style={{ fontSize: 9 }}>Priority</span>
+            </div>
+          </div>
+          
+          <div style={{ height: 40, width: '100%', background: 'var(--bg-surface)', borderRadius: 8, padding: '4px 12px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+             <Activity size={14} color="var(--success)" />
+             <div style={{ flex: 1, height: 20, position: 'relative' }}>
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', gap: 2 }}>
+                   {Array.from({ length: 20 }).map((_, i) => (
+                     <motion.div 
+                       key={i}
+                       initial={{ height: 0 }}
+                       animate={{ height: `${20 + Math.random() * 80}%` }}
+                       transition={{ repeat: Infinity, duration: 1 + Math.random(), repeatType: 'reverse' }}
+                       style={{ flex: 1, background: 'var(--success)', opacity: 0.3, borderRadius: 1 }}
+                     />
+                   ))}
+                </div>
+             </div>
+             <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--success)', fontFamily: 'var(--mono)' }}>REALTIME_STREAM</span>
+          </div>
         </div>
       </div>
 
@@ -190,14 +220,15 @@ export default function EnrichmentPanel() {
 
         {/* Priority queue preview */}
         {status?.priorityQueueLength > 0 && (
-          <div className="enrich-next-gym" style={{ flex: 1 }}>
+          <div className="enrich-next-gym" style={{ flex: '1 1 100%', marginTop: 4, background: 'rgba(249, 115, 22, 0.05)', border: '1px solid rgba(249, 115, 22, 0.1)' }}>
             <Zap size={14} style={{ color: 'var(--orange)', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--orange)' }}>
-                {status.priorityQueueLength} Priority Gym{status.priorityQueueLength > 1 ? 's' : ''}
+              <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--orange)', display: 'flex', justifyContent: 'space-between' }}>
+                <span>PRIORITY QUEUE ACTIVE</span>
+                <span>{status.priorityQueueLength} ITEMS</span>
               </div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                {status.priorityQueue?.slice(0, 3).map(p => p.gymName).filter(Boolean).join(', ') || 'Queued'}
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {status.priorityQueue?.slice(0, 3).map(p => p.gymName).filter(Boolean).join(', ') || 'Processing high-priority tasks'}
               </div>
             </div>
           </div>

@@ -21,7 +21,12 @@ export default function GlobePage() {
   const focusRef = useRef(null); // stores [lat, lng] to focus on
   const isPausedRef = useRef(false);
 
+  // Auto-Tour references
+  const isTouringRef = useRef(false);
+  const tourTargetNameRef = useRef(null);
+
   const [isPaused, setIsPaused] = useState(false);
+  const [isTouring, setIsTouring] = useState(false);
   const [zoom, setZoom] = useState(1);
 
   const [stats, setStats] = useState(null);
@@ -152,19 +157,23 @@ export default function GlobePage() {
                focusRef.current = null; // Reached target
             }
           } 
-          // Auto rotate (if not paused)
-          else if (!isPausedRef.current) {
+          // Auto rotate (if not paused and not touring to a target)
+          else if (!isPausedRef.current && !isTouringRef.current) {
             currentPhi += 0.003;
+          } else if (isTouringRef.current && !focusRef.current) {
+            currentPhi += 0.001; // slow pan while sitting at target
           }
 
-          // Pulse effect for queued cities (modifies state dynamically)
+          // Pulse effect for queued cities or active tour target
           const time = Date.now() / 150;
           state.markers = dynamicMarkers.map(c => {
-             if (c.isQueued) {
-               const pulse = (Math.sin(time) + 1) / 2; // cycles 0 to 1
-               return { location: c.coords, size: c.size + pulse * 0.04 };
+             let size = c.size;
+             const isTourTarget = isTouringRef.current && c.name === tourTargetNameRef.current;
+             if (c.isQueued || isTourTarget) {
+               const pulse = (Math.sin(time * (isTourTarget ? 1.5 : 1)) + 1) / 2; // faster pulse for tour
+               size += pulse * (isTourTarget ? 0.08 : 0.04);
              }
-             return { location: c.coords, size: c.size };
+             return { location: c.coords, size };
           });
 
           state.phi = currentPhi;
@@ -299,6 +308,34 @@ export default function GlobePage() {
       });
   }, [dynamicMarkers, cityStats]);
 
+  // Autonomous Tour Logic
+  useEffect(() => {
+    isTouringRef.current = isTouring;
+    if (!isTouring || sortedMarkers.length === 0) {
+      tourTargetNameRef.current = null;
+      setHoveredCity(null);
+      return;
+    }
+
+    let currentIndex = 0;
+    const tourNext = () => {
+      const city = sortedMarkers[currentIndex];
+      if (city) {
+        focusRef.current = city.coords;
+        tourTargetNameRef.current = city.name;
+        setHoveredCity(city.name);
+      }
+      currentIndex = (currentIndex + 1) % Math.min(sortedMarkers.length, 15); // Loop through top 15
+    };
+
+    tourNext(); // trigger first
+    const interval = setInterval(tourNext, 5000); // jump every 5 seconds
+    
+    return () => clearInterval(interval);
+  }, [isTouring, sortedMarkers]);
+
+  const toggleTour = () => setIsTouring(!isTouring);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -315,20 +352,24 @@ export default function GlobePage() {
           background: isFullscreen ? 'var(--bg-primary)' : undefined,
         }}
       >
-        {/* ── Globe Canvas ────── */}
+        {/* ── Globe Canvas & CREATIVE OVERLAY ────── */}
         <div style={{
           position: 'relative', display: 'flex', alignItems: 'center',
           justifyContent: 'center', overflow: 'hidden', cursor: 'grab',
+          background: 'radial-gradient(circle at center, rgba(15, 23, 42, 0.8) 0%, rgba(0,0,0,1) 100%)'
         }}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
           onPointerOut={handlePointerOut}
           onPointerMove={handlePointerMove}
         >
+          {/* Creative HUD Components */}
+          <TelemetryOverlay isTouring={isTouring} isPaused={isPaused} />
+
           <div style={{ 
              position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
              width: '70%', height: '70%', background: 'radial-gradient(circle, var(--accent) 0%, transparent 60%)',
-             opacity: 0.1, pointerEvents: 'none', filter: 'blur(40px)'
+             opacity: 0.1, pointerEvents: 'none', filter: 'blur(40px)', zIndex: 0
           }} />
           <canvas
             ref={canvasRef}
@@ -337,6 +378,7 @@ export default function GlobePage() {
               touchAction: 'none',
               transform: `scale(${zoom})`,
               transition: 'transform 0.1s ease-out',
+              zIndex: 2, position: 'relative'
             }}
           />
 
@@ -408,16 +450,20 @@ export default function GlobePage() {
             textAlign: 'center', pointerEvents: 'none',
             background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(12px)',
             padding: '8px 16px', borderRadius: 20, border: '1px solid rgba(139, 92, 246, 0.2)',
-            boxShadow: '0 0 20px rgba(139, 92, 246, 0.15)'
+            boxShadow: '0 0 20px rgba(139, 92, 246, 0.15)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center'
           }}>
             <div style={{
-              fontSize: 10, color: 'var(--accent)', fontWeight: 700,
+              fontSize: 10, color: isTouring ? 'var(--warning)' : 'var(--accent)', fontWeight: 700,
               textTransform: 'uppercase', letterSpacing: 2,
               fontFamily: 'var(--mono)', display: 'flex', alignItems: 'center', gap: 6
             }}>
-              <span className="live-dot" /> SATELLITE LINK ACTIVE
+              <span className="live-dot" style={{ background: isTouring ? 'var(--warning)' : 'var(--success)', boxShadow: `0 0 8px ${isTouring ? 'var(--warning)' : 'var(--success)'}` }} /> 
+              {isTouring ? 'AUTONOMOUS RECON ACTIVE' : 'SATELLITE LINK ACTIVE'}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Drag to explore · Click city to pinpoint</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+              {isTouring ? 'Scanning high-density targets automatically' : 'Drag to explore · Click city to pinpoint'}
+            </div>
           </div>
         </div>
 
@@ -435,8 +481,8 @@ export default function GlobePage() {
           {/* Decorative HUD Lines */}
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.5 }} />
 
-          {/* Title */}
-          <div>
+          {/* Title and Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
               <div style={{ padding: 8, background: 'rgba(139, 92, 246, 0.15)', borderRadius: 12, border: '1px solid rgba(139, 92, 246, 0.3)' }}>
                 <Globe2 size={24} style={{ color: 'var(--accent)' }} />
@@ -448,6 +494,19 @@ export default function GlobePage() {
                 <div style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>Global Reconnaissance</div>
               </div>
             </div>
+            <button 
+              onClick={toggleTour}
+              className={`btn sm ${isTouring ? 'primary' : 'secondary'}`}
+              style={{
+                background: isTouring ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.05)',
+                color: isTouring ? 'var(--warning)' : 'var(--text-muted)',
+                borderColor: isTouring ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255,255,255,0.1)',
+                display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, padding: '6px 10px'
+              }}
+            >
+              <Target size={14} className={isTouring ? 'pulse' : ''} />
+              {isTouring ? 'TOURING' : 'AUTO-TOUR'}
+            </button>
           </div>
 
           {/* Quick Stats */}
@@ -518,9 +577,9 @@ export default function GlobePage() {
                         position: 'absolute', inset: 0, borderRadius: '50%', background: color,
                         boxShadow: `0 0 10px ${color}`, opacity: isHovered ? 1 : 0.7
                       }} />
-                      {isQueued && (
+                      {(isQueued || isHovered) && (
                         <motion.div
-                          animate={{ scale: [1, 2], opacity: [0.8, 0] }}
+                          animate={{ scale: [1, 2.5], opacity: [0.8, 0] }}
                           transition={{ repeat: Infinity, duration: 1.5 }}
                           style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: color }}
                         />
@@ -581,8 +640,98 @@ export default function GlobePage() {
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.3); border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.6); }
+
+        /* ── CREATIVE UI EFFECTS ── */
+        .hud-grid {
+          position: absolute;
+          inset: -100%;
+          background-image: 
+            linear-gradient(rgba(139, 92, 246, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(139, 92, 246, 0.1) 1px, transparent 1px);
+          background-size: 40px 40px;
+          transform: perspective(600px) rotateX(60deg) translateY(-100px) translateZ(-200px);
+          animation: grid-move 10s linear infinite;
+          opacity: 0.4;
+          pointer-events: none;
+        }
+        @keyframes grid-move {
+          0% { transform: perspective(600px) rotateX(60deg) translateY(0) translateZ(-200px); }
+          100% { transform: perspective(600px) rotateX(60deg) translateY(40px) translateZ(-200px); }
+        }
+
+        .radar-sweep {
+          position: absolute;
+          top: 50%; left: 50%;
+          width: 1000px; height: 1000px;
+          margin-top: -500px; margin-left: -500px;
+          border-radius: 50%;
+          background: conic-gradient(from 0deg, transparent 70%, rgba(139, 92, 246, 0.05) 90%, rgba(139, 92, 246, 0.3) 100%);
+          animation: radar-spin 4s linear infinite;
+          pointer-events: none;
+        }
+        @keyframes radar-spin {
+          100% { transform: rotate(360deg); }
+        }
+
+        .corner-bracket {
+          position: absolute;
+          width: 40px; height: 40px;
+          border: 2px solid rgba(139, 92, 246, 0.4);
+          transition: all 0.3s;
+        }
+        .corner-bracket.top-left { top: 20px; left: 20px; border-right: none; border-bottom: none; }
+        .corner-bracket.top-right { top: 20px; right: 20px; border-left: none; border-bottom: none; }
+        .corner-bracket.bottom-left { bottom: 20px; left: 20px; border-right: none; border-top: none; }
+        .corner-bracket.bottom-right { bottom: 20px; right: 20px; border-left: none; border-top: none; }
       `}</style>
     </motion.div>
+  );
+}
+
+function TelemetryOverlay({ isTouring, isPaused }) {
+  const [hex1, setHex1] = useState('0x0000');
+  const [hex2, setHex2] = useState('0x0000');
+  const [lat, setLat] = useState('0.0000');
+  const [lng, setLng] = useState('0.0000');
+  
+  useEffect(() => {
+    if (isPaused) return;
+    const int = setInterval(() => {
+      setHex1('0x' + Math.floor(Math.random() * 65535).toString(16).toUpperCase().padStart(4, '0'));
+      setHex2('0x' + Math.floor(Math.random() * 65535).toString(16).toUpperCase().padStart(4, '0'));
+      setLat((Math.random() * 180 - 90).toFixed(4));
+      setLng((Math.random() * 360 - 180).toFixed(4));
+    }, 150);
+    return () => clearInterval(int);
+  }, [isPaused]);
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 1 }}>
+      {/* Moving Grid Background */}
+      <div className="hud-grid" />
+      
+      {/* Radar Sweep */}
+      {!isPaused && <div className="radar-sweep" />}
+
+      {/* Telemetry Text */}
+      <div style={{ position: 'absolute', top: 24, left: 24, color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: 11, opacity: 0.8, textShadow: '0 0 8px rgba(139,92,246,0.5)' }}>
+        SYS.CORE.OP: {isPaused ? 'STANDBY' : 'NOMINAL'}<br/>
+        UPLINK_HASH: <span style={{ color: '#fff' }}>{hex1}</span><br/>
+        MEM_OFFSET : <span style={{ color: '#fff' }}>{hex2}</span>
+      </div>
+      
+      <div style={{ position: 'absolute', bottom: 24, right: 24, color: isTouring ? 'var(--warning)' : 'var(--success)', fontFamily: 'var(--mono)', fontSize: 11, opacity: 0.8, textAlign: 'right', textShadow: `0 0 8px ${isTouring ? 'var(--warning)' : 'var(--success)'}` }}>
+        TRK_LAT: <span style={{ color: '#fff' }}>{lat}</span><br/>
+        TRK_LNG: <span style={{ color: '#fff' }}>{lng}</span><br/>
+        <div style={{ marginTop: 4, fontWeight: 700 }}>[{isTouring ? 'AUTO-TRACKING' : 'MANUAL OVERRIDE'}]</div>
+      </div>
+
+      {/* Corner Brackets */}
+      <div className="corner-bracket top-left" />
+      <div className="corner-bracket top-right" />
+      <div className="corner-bracket bottom-left" />
+      <div className="corner-bracket bottom-right" />
+    </div>
   );
 }
 

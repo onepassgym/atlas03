@@ -37,6 +37,16 @@
   --log-bg: rgba(0,0,0,0.2);
   --log-border: rgba(255,255,255,0.03);
 
+  /* Premium Glass Variables */
+  --card-glass-bg: linear-gradient(180deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%);
+  --card-glass-bg-hover: linear-gradient(180deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.8) 100%);
+  --card-glass-border: rgba(255, 255, 255, 0.05);
+  --card-glass-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  --header-glass-bg: linear-gradient(135deg, rgba(15,23,42,0.8) 0%, rgba(15,23,42,0.4) 100%);
+  --header-text-gradient: linear-gradient(90deg, #ffffff 0%, #a78bfa 100%);
+  --header-text-shadow: 0 4px 24px rgba(139,92,246,0.3);
+  --tooltip-glass-bg: rgba(15, 23, 42, 0.85);
+
   /* ── Typography & Spacing ── */
   --font: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
@@ -82,6 +92,16 @@
   --log-border: rgba(0,0,0,0.05);
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.12);
+
+  /* Premium Glass Variables */
+  --card-glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(240, 244, 248, 0.9) 100%);
+  --card-glass-bg-hover: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(240, 244, 248, 1) 100%);
+  --card-glass-border: rgba(0, 0, 0, 0.05);
+  --card-glass-shadow: 0 4px 24px rgba(0,0,0,0.04);
+  --header-glass-bg: linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.5) 100%);
+  --header-text-gradient: linear-gradient(90deg, #0f172a 0%, #7c3aed 100%);
+  --header-text-shadow: 0 2px 12px rgba(124,58,237,0.15);
+  --tooltip-glass-bg: rgba(255, 255, 255, 0.9);
 
   color-scheme: light;
 }
@@ -162,6 +182,12 @@ a:hover { text-decoration: underline; }
   50%     { opacity: 1; transform: translateX(100%); }
 }
 
+@keyframes pulse-dot {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.2); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -188,14 +214,15 @@ a:hover { text-decoration: underline; }
 
 /* ── Cards ─────────────────────────────────────────────────── */
 .card {
-  background: var(--bg-card);
+  background: var(--card-glass-bg, var(--bg-card));
   backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
+  border: 1px solid var(--card-glass-border, var(--border));
+  box-shadow: var(--card-glass-shadow, none);
   border-radius: var(--radius);
   padding: 20px;
   transition: all 0.3s ease;
 }
-.card:hover { border-color: var(--border-glow); background: var(--bg-card-hover); }
+.card:hover { border-color: var(--border-glow); background: var(--card-glass-bg-hover, var(--bg-card-hover)); }
 .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .card-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-secondary); }
 .card-icon { font-size: 18px; }
@@ -311,8 +338,9 @@ select.input {
   position: fixed; top: 50%; right: -20%; transform: translateY(-50%);
   width: 1000px; height: 1000px; z-index: -1; opacity: 0.55;
   pointer-events: none; filter: blur(1px);
+  transition: opacity 0.5s ease;
 }
-[data-theme="light"] .globe-canvas-container { opacity: 0.18; }
+[data-theme="light"] .globe-canvas-container { opacity: 0.35; }
 @media (max-width: 1200px) {
   .globe-canvas-container { right: -40%; opacity: 0.3; }
   [data-theme="light"] .globe-canvas-container { opacity: 0.12; }
@@ -1441,4 +1469,21 @@ select.input {
   .explorer-active-filters { gap: 4px; }
   .explorer-filter-chip { font-size: 10px; padding: 3px 10px; }
   .explorer-suggestions { max-height: 320px; }
+}
+
+/* ── Custom Scrollbar ───────────────────────────────────────── */
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Utilities ──────────────────────────────────────────────── */
+.spin { animation: spin 1s linear infinite; }
+.pulse { animation: pulse 2s infinite; }
+
+.glass-panel {
+  background: var(--card-glass-bg);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--card-glass-border);
+  box-shadow: var(--shadow);
 }

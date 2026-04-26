@@ -73,8 +73,8 @@ export default function SimulationsPage() {
         /* Game card shell — consistent padding and look */
         .sim-card-shell {
           border-radius: 6px;
-          border: 1px solid rgba(255,255,255,0.05);
-          background: rgba(0,0,0,0.18);
+          border: 1px solid var(--border);
+          background: var(--bg-surface);
           padding: 14px;
         }
       `}</style>
@@ -82,7 +82,7 @@ export default function SimulationsPage() {
       {/* ── Page Header ── */}
       <div style={{
         display:'flex', alignItems:'center', gap:16,
-        borderBottom:'1px solid rgba(255,255,255,0.05)', paddingBottom:24,
+        borderBottom:'1px solid var(--border)', paddingBottom:24,
         flexWrap:'wrap', rowGap:12,
       }}>
         <div style={{
