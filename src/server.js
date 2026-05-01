@@ -60,7 +60,6 @@ app.use('/media', express.static(mediaPath, { maxAge: '7d' }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/',           indexRoutes);
-app.use('/',           indexRoutes);
 
 // Base API authentication
 app.use('/api',        authMiddleware);
@@ -76,9 +75,6 @@ app.use('/api/events',  require('./api/eventRoutes'));
 
 // ── Static files + Dashboard ──────────────────────────────────────────────────
 
-// Serve Media files statically
-const mediaPath = path.resolve(__dirname, '..', cfg.media.basePath);
-app.use('/media', express.static(mediaPath, { maxAge: '30d' }));
 
 // Serve Vite-built dashboard SPA
 const dashboardPath = path.join(__dirname, '..', 'dashboard', 'dist');
