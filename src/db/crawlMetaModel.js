@@ -12,7 +12,7 @@ const CrawlMetaSchema = new mongoose.Schema({
   dataCompleteness: { type: Number, default: 0 },
   sourceUrl:        String,
   jobId:            String,
-}, { timestamps: true, collection: 'gym_crawl_meta' });
+}, { timestamps: true, collection: 'gym_crawl_meta', autoIndex: false });
 
 CrawlMetaSchema.index({ gymId: 1 }, { unique: true });
 CrawlMetaSchema.index({ jobId: 1 });

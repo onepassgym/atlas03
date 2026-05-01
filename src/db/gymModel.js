@@ -162,6 +162,7 @@ const GymSchema = new mongoose.Schema({
 }, { 
   timestamps: true, 
   collection: 'gyms',
+  autoIndex: false,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });

@@ -38,6 +38,7 @@ const PhotoSyncStateSchema = new mongoose.Schema({
 }, {
   timestamps: true,
   collection: 'photo_sync_state',
+  autoIndex: false,
 });
 
 PhotoSyncStateSchema.statics.getSingleton = async function () {

@@ -110,25 +110,34 @@ export default function Overview() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // Refresh data based on real-time SSE events instead of interval polling
+  // Debounced refresh based on real-time SSE events — prevents API storm during active crawl
   useEffect(() => {
-    if (events.length > 0) {
-      const latest = events[0];
-      const type = latest?.type || '';
-      
-      // Update jobs when a job starts/completes/fails
-      if (type.startsWith('job:') && type !== 'job:progress') {
-        setTimeout(() => api.get('/api/crawl/jobs?limit=6').then(r => r?.success && setJobs(r.jobs || [])).catch(() => {}), 500);
+    if (events.length === 0) return;
+    
+    const latest = events[0];
+    const type = latest?.type || '';
+    
+    // Determine what to refetch based on event type
+    let refetchJobs = false;
+    let refetchGyms = false;
+    
+    if (type.startsWith('job:') && type !== 'job:progress') refetchJobs = true;
+    if (type === 'gym:created' || type === 'gym:updated') refetchGyms = true;
+    
+    if (!refetchJobs && !refetchGyms) return;
+    
+    // Debounce: wait 2s after last relevant event before refetching
+    const timer = setTimeout(() => {
+      if (refetchJobs) {
+        api.get('/api/crawl/jobs?limit=6').then(r => r?.success && setJobs(r.jobs || [])).catch(() => {});
       }
-      
-      // Update gym stats and latest gyms when a gym is created or updated
-      if (type.startsWith('gym:')) {
-        setTimeout(() => {
-          api.get('/api/gyms/stats').then(r => r?.success && setStats(r.stats)).catch(() => {});
-          api.get('/api/gyms?limit=6&sortBy=createdAt').then(r => r?.success && setLatestGyms(r.gyms || [])).catch(() => {});
-        }, 500);
+      if (refetchGyms) {
+        api.get('/api/gyms/stats').then(r => r?.success && setStats(r.stats)).catch(() => {});
+        api.get('/api/gyms?limit=6&sortBy=createdAt').then(r => r?.success && setLatestGyms(r.gyms || [])).catch(() => {});
       }
-    }
+    }, 2000);
+    
+    return () => clearTimeout(timer);
   }, [events]);
 
   if (loading) return <div className="container"><Skeleton height={100} count={3} /></div>;

@@ -86,7 +86,7 @@ async function checkFreshness(location) {
   if (location.lat && location.lng && location.name) {
     try {
       const nearby = await Gym.find({
-        geoLocation: {
+        location: {
           $nearSphere: {
             $geometry: { type: 'Point', coordinates: [location.lng, location.lat] },
             $maxDistance: 100,  // 100m radius for chain matching
@@ -115,7 +115,7 @@ async function checkFreshness(location) {
         }
       }
     } catch (err) {
-      // geoLocation index may not exist — non-fatal
+      // location index may not exist — non-fatal
     }
   }
 

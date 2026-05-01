@@ -16,6 +16,7 @@ const GymChangeLogSchema = new mongoose.Schema(
     // No auto-timestamps — changedAt is explicit above
     timestamps: false,
     collection: 'gymChangeLogs',
+    autoIndex: false,
   }
 );
 

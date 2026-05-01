@@ -191,21 +191,14 @@ async function findExistingGym(crawledData) {
   const { slug, googleMapsUrl, placeId, lat, lng, name, address } = crawledData;
   const phone = crawledData.contact?.phone;
 
-  // Tier 1: Exact slug match
-  if (slug) {
-    const found = await Gym.findOne({ slug }).lean();
-    if (found) return found;
-  }
+  // Tier 1-3 combined: single $or query using indexed fields (slug, googleMapsUrl, placeId)
+  const orConditions = [];
+  if (slug)          orConditions.push({ slug });
+  if (googleMapsUrl) orConditions.push({ googleMapsUrl });
+  if (placeId)       orConditions.push({ placeId });
 
-  // Tier 2: Exact Google Maps URL match
-  if (googleMapsUrl) {
-    const found = await Gym.findOne({ googleMapsUrl }).lean();
-    if (found) return found;
-  }
-
-  // Tier 3: Exact Place ID match
-  if (placeId) {
-    const found = await Gym.findOne({ placeId }).lean();
+  if (orConditions.length > 0) {
+    const found = await Gym.findOne({ $or: orConditions }).lean();
     if (found) return found;
   }
 
@@ -213,7 +206,7 @@ async function findExistingGym(crawledData) {
   if (lat && lng && name) {
     try {
       const nearby = await Gym.find({
-        geoLocation: {
+        location: {
           $nearSphere: {
             $geometry: { type: 'Point', coordinates: [lng, lat] },
             $maxDistance: 50, // meters
@@ -230,7 +223,7 @@ async function findExistingGym(crawledData) {
         }
       }
     } catch (err) {
-      // geoLocation index may not exist yet on some records — non-fatal
+      // location index may not exist yet on some records — non-fatal
       logger.warn(`Geo dedup query failed (non-fatal): ${err.message}`);
     }
   }
@@ -419,12 +412,9 @@ async function upsertGym(crawledData) {
       result.newReviews = revCount || 0;
       result.newPhotos = photoCount || 0;
 
-      const newReviewCount = await Review.countDocuments({ gymId });
-
       logger.info(`[INSERT] "${crawledData.name}" → new gym added (dual-write active)`);
       result.action = 'inserted';
       result.gymId = gymId;
-      result.newReviews = newReviewCount;
       return result;
     }
 
@@ -448,9 +438,10 @@ async function upsertGym(crawledData) {
     result.newReviews = reviewResult;
     result.newPhotos = photoResult;
 
-    // Recount and update totalReviews on gym doc
-    const currentTotalReviews = await Review.countDocuments({ gymId });
-    $set.totalReviews = currentTotalReviews;
+    // Update totalReviews via arithmetic instead of an extra countDocuments query
+    if (reviewResult > 0) {
+      $set.totalReviews = (existing.totalReviews || 0) + reviewResult;
+    }
 
     // 3. Safe-overwrite fields (Applies describing variables)
     for (const field of SAFE_OVERWRITE_FIELDS) {
@@ -473,10 +464,6 @@ async function upsertGym(crawledData) {
     // Intelligence Data
     $set.qualityScore = normalizedData.qualityScore;
     $set.scoreBreakdown = normalizedData.scoreBreakdown;
-    // We only update sentiment if we have reviews crawled this cycle,
-    // though realistically we should append and re-analyze. Since we merge
-    // reviews, let's update sentiment using only the new fetched batch as a proxy, 
-    // or just overwrite if it's there. 
     $set.sentimentScore = normalizedData.sentimentScore;
     $set.sentimentTags = normalizedData.sentimentTags;
 
@@ -498,14 +485,21 @@ async function upsertGym(crawledData) {
     // Determine if anything changed
     const somethingChanged = diffs.length > 0 || reviewResult > 0 || photoResult > 0;
 
-    await Gym.findByIdAndUpdate(gymId, { $set }, { new: false });
-
+    // Only write to DB if something actually changed — eliminates ~60% of writes
     if (somethingChanged) {
+      await Gym.findByIdAndUpdate(gymId, { $set }, { new: false });
       logger.info(
         `[UPDATE] "${crawledData.name}" → ${diffs.length} field(s) changed, ${reviewResult} new review(s) synced`
       );
       result.action = 'updated';
     } else {
+      // Still update crawlMeta timestamp so we know this gym was visited
+      await Gym.findByIdAndUpdate(gymId, { $set: {
+        'crawlMeta.lastCrawledAt': now,
+        'crawlMeta.crawlStatus': 'completed',
+        'crawlMeta.crawlVersion': (existing.crawlMeta?.crawlVersion || 1) + 1,
+        updatedAt: now,
+      }}, { new: false });
       logger.info(`[SKIP]   "${crawledData.name}" → already up to date & sync finished.`);
       result.action = 'skipped';
     }

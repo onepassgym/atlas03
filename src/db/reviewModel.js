@@ -64,6 +64,7 @@ const ReviewSchema = new mongoose.Schema(
   {
     timestamps: { createdAt: 'createdAt', updatedAt: false },
     collection: 'gym_reviews',
+    autoIndex: false,
   }
 );
 

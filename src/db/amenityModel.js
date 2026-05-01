@@ -5,6 +5,6 @@ const AmenitySchema = new mongoose.Schema({
   slug:  { type: String, required: true, unique: true },
   label: { type: String, required: true },
   icon:  String,
-}, { timestamps: { createdAt: 'createdAt', updatedAt: false }, collection: 'gym_amenities' });
+}, { timestamps: { createdAt: 'createdAt', updatedAt: false }, collection: 'gym_amenities', autoIndex: false });
 
 module.exports = mongoose.model('Amenity', AmenitySchema);

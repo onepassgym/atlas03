@@ -5,6 +5,6 @@ const PlaceTypeSchema = new mongoose.Schema({
   slug:       { type: String, required: true, unique: true },
   label:      { type: String, required: true },
   googleType: String,
-}, { timestamps: { createdAt: 'createdAt', updatedAt: false }, collection: 'gym_place_types' });
+}, { timestamps: { createdAt: 'createdAt', updatedAt: false }, collection: 'gym_place_types', autoIndex: false });
 
 module.exports = mongoose.model('PlaceType', PlaceTypeSchema);

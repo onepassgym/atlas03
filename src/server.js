@@ -40,9 +40,9 @@ app.use(cors());
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(morgan('combined', { 
+app.use(morgan('short', { 
   stream: { write: m => logger.info(m.trim()) },
-  skip: (req) => req.path === '/api/events'
+  skip: (req) => req.path === '/api/events' || req.path.startsWith('/media/')
 }));
 
 // ── Rate limit ────────────────────────────────────────────────────────────────

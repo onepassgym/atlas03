@@ -28,6 +28,12 @@ const Gym      = require('../db/gymModel');
 const cfg      = require('../../config');
 const logger   = require('../utils/logger');
 const { ok, err } = require('../utils/apiUtils');
+const { buildOp, collectPhotos } = require('../services/photoMigrationHelpers');
+
+// ── In-memory stats cache (TTL-based) ─────────────────────────────────────────
+let _mediaStatsCache = null;
+let _mediaStatsCacheAt = 0;
+const MEDIA_STATS_CACHE_TTL = 60_000; // 60 seconds
 
 const MEDIA_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif',
@@ -143,56 +149,83 @@ router.get('/', async (req, res) => {
 // ── GET /api/media/stats ─────────────────────────────────────────────────────
 router.get('/stats', async (req, res) => {
   try {
-    const [
-      totalCount,
-      totalSizeAgg,
-      byType,
-      byGymTop,
-      recentUploads,
-      missingCount,
-      orphanedCount,
-      largestFiles,
-      unlinkedCount,
-      gymPhotoSum,
-    ] = await Promise.all([
-      Photo.countDocuments(),
-      Photo.aggregate([{ $group: { _id: null, totalSize: { $sum: '$sizeBytes' }, avgSize: { $avg: '$sizeBytes' } } }]),
-      Photo.aggregate([
-        { $group: { _id: '$type', count: { $sum: 1 }, size: { $sum: '$sizeBytes' } } },
-        { $sort: { count: -1 } }
-      ]),
-      Photo.aggregate([
-        { $group: { _id: '$gymId', count: { $sum: 1 }, size: { $sum: '$sizeBytes' } } },
-        { $sort: { count: -1 } },
-        { $limit: 10 },
-        { $lookup: { from: 'gyms', localField: '_id', foreignField: '_id', as: 'gym' } },
-        { $unwind: { path: '$gym', preserveNullAndEmptyArrays: true } },
-        { $project: { gymName: { $ifNull: ['$gym.name', 'Unknown'] }, count: 1, size: 1 } }
-      ]),
-      Photo.countDocuments({ createdAt: { $gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) } }),
-      Photo.countDocuments({ fsExists: false }),
-      Photo.countDocuments({ isOrphaned: true }),
-      Photo.find().sort({ sizeBytes: -1 }).limit(5).populate('gymId', 'name').lean(),
-      Photo.countDocuments({ gymId: null }),
-      Gym.aggregate([{ $group: { _id: null, total: { $sum: '$totalPhotos' } } }]),
+    // Return cached stats if fresh enough
+    if (_mediaStatsCache && (Date.now() - _mediaStatsCacheAt) < MEDIA_STATS_CACHE_TTL) {
+      return ok(res, { stats: _mediaStatsCache });
+    }
+
+    const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+
+    // Single $facet pipeline replaces 10 parallel queries
+    const [facetResult] = await Photo.aggregate([
+      {
+        $facet: {
+          totals: [
+            { $group: { _id: null, totalCount: { $sum: 1 }, totalSize: { $sum: '$sizeBytes' }, avgSize: { $avg: '$sizeBytes' } } }
+          ],
+          byType: [
+            { $group: { _id: '$type', count: { $sum: 1 }, size: { $sum: '$sizeBytes' } } },
+            { $sort: { count: -1 } }
+          ],
+          byGymTop: [
+            { $group: { _id: '$gymId', count: { $sum: 1 }, size: { $sum: '$sizeBytes' } } },
+            { $sort: { count: -1 } },
+            { $limit: 10 },
+            { $lookup: { from: 'gyms', localField: '_id', foreignField: '_id', as: 'gym' } },
+            { $unwind: { path: '$gym', preserveNullAndEmptyArrays: true } },
+            { $project: { gymName: { $ifNull: ['$gym.name', 'Unknown'] }, count: 1, size: 1 } }
+          ],
+          recentUploads: [
+            { $match: { createdAt: { $gte: weekAgo } } },
+            { $count: 'count' }
+          ],
+          missingCount: [
+            { $match: { fsExists: false } },
+            { $count: 'count' }
+          ],
+          orphanedCount: [
+            { $match: { isOrphaned: true } },
+            { $count: 'count' }
+          ],
+          largestFiles: [
+            { $sort: { sizeBytes: -1 } },
+            { $limit: 5 },
+            { $lookup: { from: 'gyms', localField: 'gymId', foreignField: '_id', as: 'gymDoc' } },
+            { $unwind: { path: '$gymDoc', preserveNullAndEmptyArrays: true } },
+            { $addFields: { 'gymId': { $ifNull: [{ _id: '$gymDoc._id', name: '$gymDoc.name' }, null] } } },
+            { $project: { gymDoc: 0 } }
+          ],
+          unlinkedCount: [
+            { $match: { gymId: null } },
+            { $count: 'count' }
+          ],
+        }
+      }
     ]);
 
-    ok(res, {
-      stats: {
-        totalCount,
-        totalSize:    totalSizeAgg[0]?.totalSize || 0,
-        avgSize:      totalSizeAgg[0]?.avgSize   || 0,
-        byType,
-        byGymTop,
-        recentUploads,
-        missingCount,
-        orphanedCount,
-        largestFiles,
-        unlinkedCount,
-        gymPhotoSum:  gymPhotoSum[0]?.total || 0,   // sum of gym.totalPhotos — shows discrepancy
-        needsMigration: (gymPhotoSum[0]?.total || 0) > totalCount,
-      }
-    });
+    const gymPhotoSum = await Gym.aggregate([{ $group: { _id: null, total: { $sum: '$totalPhotos' } } }]);
+
+    const totals = facetResult.totals[0] || { totalCount: 0, totalSize: 0, avgSize: 0 };
+
+    const statsResult = {
+      totalCount:    totals.totalCount,
+      totalSize:     totals.totalSize || 0,
+      avgSize:       totals.avgSize || 0,
+      byType:        facetResult.byType,
+      byGymTop:      facetResult.byGymTop,
+      recentUploads: facetResult.recentUploads[0]?.count || 0,
+      missingCount:  facetResult.missingCount[0]?.count || 0,
+      orphanedCount: facetResult.orphanedCount[0]?.count || 0,
+      largestFiles:  facetResult.largestFiles,
+      unlinkedCount: facetResult.unlinkedCount[0]?.count || 0,
+      gymPhotoSum:   gymPhotoSum[0]?.total || 0,
+      needsMigration: (gymPhotoSum[0]?.total || 0) > totals.totalCount,
+    };
+
+    _mediaStatsCache = statsResult;
+    _mediaStatsCacheAt = Date.now();
+
+    ok(res, { stats: statsResult });
   } catch (e) {
     logger.error('[media] GET /stats error:', e.message);
     err(res, e.message);
@@ -257,53 +290,6 @@ router.post('/migrate-from-gyms', async (req, res) => {
       const BATCH = 200;
       let ops = [];
 
-      // Build one bulkWrite op from a normalised photo descriptor
-      function buildOp(gymId, gymSlug, p, isCover) {
-        let folder = `photos/${gymSlug}`;
-        if (p.localPath) {
-          try {
-            folder = path.dirname(
-              path.relative(path.resolve(cfg.media.basePath), p.localPath)
-            ).replace(/\\/g, '/');
-          } catch (_) { /* keep default */ }
-        }
-        const filename = p.localPath
-          ? path.basename(p.localPath)
-          : path.basename((p.publicUrl || 'photo.jpg').split('?')[0]);
-
-        return {
-          updateOne: {
-            filter: { publicUrl: p.publicUrl },
-            update: {
-              $setOnInsert: {
-                gymId,
-                originalUrl:  p.originalUrl  || null,
-                localPath:    p.localPath    || null,
-                publicUrl:    p.publicUrl,
-                thumbnailUrl: p.thumbnailUrl || null,
-                filename,
-                folder,
-                type:         p.type         || 'photo',
-                width:        p.width        ?? null,
-                height:       p.height       ?? null,
-                sizeBytes:    p.sizeBytes    ?? null,
-                mimeType:     p.mimeType     || null,
-                appealScore:  p.appealScore  || 0,
-                brightness:   p.brightness   || null,
-                contrast:     p.contrast     || null,
-                tags:         Array.isArray(p.tags) ? p.tags : [],
-                isCover:      Boolean(isCover),
-                downloadedAt: p.downloadedAt ? new Date(p.downloadedAt) : null,
-                fsExists:     true,
-                createdAt:    p.downloadedAt ? new Date(p.downloadedAt) : new Date(),
-              },
-              $set: { gymId, ...(isCover ? { isCover: true } : {}) },
-            },
-            upsert: true,
-          },
-        };
-      }
-
       async function flushBatch() {
         if (!ops.length) return;
         try {
@@ -317,45 +303,7 @@ router.post('/migrate-from-gyms', async (req, res) => {
       }
 
       for (const gym of gyms) {
-        // Deduplicate per gym by publicUrl; rawPhotos is the primary source
-        const photoMap = new Map(); // publicUrl → { p, isCover }
-
-        // 1 — rawPhotos: has localPath, sizeBytes, downloadedAt, originalUrl
-        if (Array.isArray(gym.rawPhotos)) {
-          for (const p of gym.rawPhotos) {
-            if (!p || typeof p !== 'object' || !p.publicUrl) { skipped++; continue; }
-            photoMap.set(p.publicUrl, { p, isCover: false });
-          }
-        }
-
-        // 2 — coverPhoto: merge into existing entry or add as standalone record
-        //     Fields: publicUrl, thumbnailUrl, width, height
-        if (gym.coverPhoto?.publicUrl) {
-          const existing = photoMap.get(gym.coverPhoto.publicUrl);
-          if (existing) {
-            // Same file as a rawPhoto — mark cover + fill any missing dimensions
-            existing.isCover        = true;
-            existing.p.width        = existing.p.width        ?? gym.coverPhoto.width        ?? null;
-            existing.p.height       = existing.p.height       ?? gym.coverPhoto.height       ?? null;
-            existing.p.thumbnailUrl = existing.p.thumbnailUrl ?? gym.coverPhoto.thumbnailUrl ?? null;
-          } else {
-            // coverPhoto not present in rawPhotos — create standalone entry
-            photoMap.set(gym.coverPhoto.publicUrl, {
-              p: {
-                publicUrl:    gym.coverPhoto.publicUrl,
-                thumbnailUrl: gym.coverPhoto.thumbnailUrl || null,
-                width:        gym.coverPhoto.width        ?? null,
-                height:       gym.coverPhoto.height       ?? null,
-                originalUrl:  null,
-                localPath:    null,
-                type:         'photo',
-                sizeBytes:    null,
-                downloadedAt: null,
-              },
-              isCover: true,
-            });
-          }
-        }
+        const photoMap = collectPhotos(gym);
 
         if (photoMap.size === 0) { skipped++; continue; }
 

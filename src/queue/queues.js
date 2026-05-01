@@ -198,15 +198,17 @@ async function removeJobAndBatches(jobId) {
     if (!mainJob) mainJob = await chainCrawlQueue.getJob(jobId);
     if (mainJob) await mainJob.remove().catch(() => {});
 
-    // 2. Remove batches (predictable IDs: jobId:batch:N)
-    // We try a reasonable range (up to 200 batches)
-    const batchRemovals = [];
-    for (let i = 0; i < 200; i++) {
-        batchRemovals.push(
-            crawlQueue.getJob(`${jobId}:batch:${i}`).then(j => j?.remove().catch(() => {}))
-        );
+    // 2. Remove batches by scanning waiting/delayed jobs with matching prefix
+    const batchPrefix = `${jobId}:batch:`;
+    const states = ['waiting', 'delayed', 'active', 'failed'];
+    for (const state of states) {
+      const jobs = await crawlQueue.getJobs([state], 0, 500);
+      for (const j of jobs) {
+        if (j.id && j.id.startsWith(batchPrefix)) {
+          await j.remove().catch(() => {});
+        }
+      }
     }
-    await Promise.all(batchRemovals);
     return true;
   } catch (e) {
     logger.error(`Failed to remove job/batches for ${jobId}: ${e.message}`);

@@ -8,6 +8,11 @@ const Photo     = require('../db/photoModel');
 
 const { ok, err, validate } = require('../utils/apiUtils');
 
+// ── In-memory stats cache (TTL-based) ─────────────────────────────────────────
+let _gymStatsCache = null;
+let _gymStatsCacheAt = 0;
+const STATS_CACHE_TTL = 30_000; // 30 seconds
+
 /**
  * @swagger
  * tags:
@@ -64,7 +69,7 @@ router.get('/suggestions', async (req, res) => {
         { $limit: 4 }
       ]),
       Gym.aggregate([
-        { $match: { chainName: contains, chainName: { $ne: null } } },
+        { $match: { chainName: { $regex: contains, $ne: null } } },
         { $group: { _id: '$chainName', chainSlug: { $first: '$chainSlug' }, count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 3 }
@@ -346,7 +351,7 @@ router.get('/nearby',
     if (validate(req, res)) return;
     const { lat, lng, radiusKm = 5, limit = 20, category } = req.query;
     const filter = {
-      geoLocation: { $near: { $geometry: { type: 'Point', coordinates: [+lng, +lat] }, $maxDistance: +radiusKm * 1000 } },
+      location: { $near: { $geometry: { type: 'Point', coordinates: [+lng, +lat] }, $maxDistance: +radiusKm * 1000 } },
     };
     if (category) filter.category = category;
     try {
@@ -373,6 +378,11 @@ router.get('/nearby',
 // GET /api/gyms/stats
 router.get('/stats', async (_, res) => {
   try {
+    // Return cached stats if fresh enough
+    if (_gymStatsCache && (Date.now() - _gymStatsCacheAt) < STATS_CACHE_TTL) {
+      return ok(res, { stats: _gymStatsCache });
+    }
+
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -412,7 +422,7 @@ router.get('/stats', async (_, res) => {
       Gym.countDocuments({ updatedAt: { $gte: todayStart } })
     ]);
 
-    ok(res, { stats: { 
+    const statsResult = { 
       total, 
       byCategory, 
       topCities, 
@@ -426,7 +436,12 @@ router.get('/stats', async (_, res) => {
         created: todayCreated,
         updated: todayUpdated
       }
-    } });
+    };
+
+    _gymStatsCache = statsResult;
+    _gymStatsCacheAt = Date.now();
+
+    ok(res, { stats: statsResult });
   } catch (e) { err(res, e.message); }
 });
 

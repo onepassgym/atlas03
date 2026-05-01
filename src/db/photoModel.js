@@ -28,7 +28,8 @@ const PhotoSchema = new mongoose.Schema({
   fsExists:     { type: Boolean, default: true },
 }, {
   timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
-  collection: 'gym_photos'
+  collection: 'gym_photos',
+  autoIndex: false,
 });
 
 // ── Compound indexes for scalable queries ──────────────────────────────────────

@@ -16,7 +16,8 @@ const SystemStateSchema = new mongoose.Schema({
   lastUpdatedBy: { type: String, default: 'system' }
 }, { 
   timestamps: true,
-  collection: 'system_states'
+  collection: 'system_states',
+  autoIndex: false,
 });
 
 // Helper to get or create the singleton state document

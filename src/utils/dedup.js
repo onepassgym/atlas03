@@ -33,7 +33,7 @@ async function findDuplicate({ placeId, name, lat, lng, address }) {
   // 2. Spatial proximity ($nearSphere) + name similarity
   if (lat && lng) {
     const nearby = await Gym.find({
-      geoLocation: {
+      location: {
         $nearSphere: {
           $geometry: { type: 'Point', coordinates: [lng, lat] },
           $maxDistance: RADIUS,

@@ -316,9 +316,16 @@ export default function MediaStorage() {
   }, [jobs, pollProgress]);
 
   // Always poll once per 5s even when idle (catch externally-triggered jobs)
+  // Clean up on unmount to prevent polling when user navigates away
   useEffect(() => {
     const t = setInterval(pollProgress, 5000);
-    return () => clearInterval(t);
+    return () => {
+      clearInterval(t);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
   }, [pollProgress]);
 
   /* ── fetch page ─────────────────────────────────────────────────────────── */
@@ -360,19 +367,23 @@ export default function MediaStorage() {
     return () => clearTimeout(t);
   }, [search, typeFilter, sortBy]);
 
-  /* ── infinite scroll observer ────────────────────────────────────────────── */
+  /* ── infinite scroll observer (ref-stable callback avoids re-creation) ───── */
+  const scrollStateRef = useRef({ page, totalPages, loading, loadingMore, search, typeFilter, sortBy });
+  scrollStateRef.current = { page, totalPages, loading, loadingMore, search, typeFilter, sortBy };
+
   useEffect(() => {
     if (!loaderRef.current) return;
     const obs = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && page < totalPages && !loadingMore && !loading) {
-        const next = page + 1;
+      const { page: p, totalPages: tp, loadingMore: lm, loading: ld, search: s, typeFilter: tf, sortBy: sb } = scrollStateRef.current;
+      if (entries[0].isIntersecting && p < tp && !lm && !ld) {
+        const next = p + 1;
         setPage(next);
-        fetchPage(next, search, typeFilter, sortBy, true);
+        fetchPage(next, s, tf, sb, true);
       }
     }, { threshold: 0.1 });
     obs.observe(loaderRef.current);
     return () => obs.disconnect();
-  }, [page, totalPages, loading, loadingMore, search, typeFilter, sortBy]);
+  }, []); // stable — reads from ref
 
   /* ── keyboard shortcut: Escape clears selection ─────────────────────────── */
   useEffect(() => {

@@ -23,80 +23,12 @@ const Gym   = require('../db/gymModel');
 const PhotoSyncState = require('../db/photoSyncStateModel');
 const cfg    = require('../../config');
 const logger = require('../utils/logger');
+const { buildOp, collectPhotos } = require('./photoMigrationHelpers');
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
 const GYMS_PER_RUN = 500;   // gyms to process per daily run (tune for your VPS)
 const BATCH_SIZE   = 200;   // photo ops per bulkWrite flush
 const RUN_TAG = `photo-sync-${process.pid}`; // unique tag for this process instance
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Build a single bulkWrite upsert op for one photo.
- * Handles both rawPhotos entries and standalone coverPhoto records.
- */
-function buildOp(gymId, gymSlug, p, isCover) {
-  let folder = `photos/${gymSlug}`;
-  if (p.localPath) {
-    try {
-      folder = path.dirname(
-        path.relative(path.resolve(cfg.media.basePath), p.localPath)
-      ).replace(/\\/g, '/');
-    } catch (_) { /* keep default */ }
-  }
-
-  const filename = p.localPath
-    ? path.basename(p.localPath)
-    : path.basename((p.publicUrl || 'photo.jpg').split('?')[0]);
-
-  return {
-    updateOne: {
-      filter: { publicUrl: p.publicUrl },
-      update: {
-        $setOnInsert: {
-          gymId,
-          originalUrl:  p.originalUrl  || null,
-          localPath:    p.localPath    || null,
-          publicUrl:    p.publicUrl,
-          thumbnailUrl: p.thumbnailUrl || null,
-          filename,
-          folder,
-          type:         p.type         || 'photo',
-          width:        p.width        ?? null,
-          height:       p.height       ?? null,
-          sizeBytes:    p.sizeBytes    ?? null,
-          mimeType:     p.mimeType     || null,
-          appealScore:  p.appealScore  || 0,
-          brightness:   p.brightness   || null,
-          contrast:     p.contrast     || null,
-          tags:         Array.isArray(p.tags) ? p.tags : [],
-          isCover:      Boolean(isCover),
-          downloadedAt: p.downloadedAt ? new Date(p.downloadedAt) : null,
-          fsExists:     true,
-          createdAt:    p.downloadedAt ? new Date(p.downloadedAt) : new Date(),
-        },
-        $set: { gymId, ...(isCover ? { isCover: true } : {}) },
-      },
-      upsert: true,
-    },
-  };
-}
-
-/**
- * Collect and deduplicate all photos for a single gym.
- * rawPhotos is the primary source; coverPhoto supplements it.
- * Returns a Map<publicUrl, {p, isCover}>.
- */
-function collectPhotos(gym) {
-  const photoMap = new Map();
-
-  // 1 — rawPhotos
-  if (Array.isArray(gym.rawPhotos)) {
-    for (const p of gym.rawPhotos) {
-      if (!p || typeof p !== 'object' || !p.publicUrl) continue;
-      photoMap.set(p.publicUrl, { p, isCover: false });
-    }
-  }
 
   // 2 — coverPhoto (merge or add)
   if (gym.coverPhoto?.publicUrl) {
