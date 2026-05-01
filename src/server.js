@@ -20,6 +20,7 @@ const chainRoutes     = require('./api/chainRoutes');
 const enrichmentRoutes = require('./api/enrichmentRoutes');
 const dataHealthRoutes = require('./api/dataHealthRoutes');
 const systemRoutes    = require('./api/systemRoutes');
+const mediaRoutes     = require('./api/mediaRoutes');
 const { startScheduler } = require('./services/schedulerService');
 const bus             = require('./services/eventBus');
 const { startWebhookService } = require('./services/webhookService');
@@ -70,9 +71,14 @@ app.use('/api/chains',  chainRoutes);
 app.use('/api/system',  systemRoutes);
 app.use('/api/enrichment', enrichmentRoutes);
 app.use('/api/data-health', dataHealthRoutes);
+app.use('/api/media',   mediaRoutes);
 app.use('/api/events',  require('./api/eventRoutes'));
 
 // ── Static files + Dashboard ──────────────────────────────────────────────────
+
+// Serve Media files statically
+const mediaPath = path.resolve(__dirname, '..', cfg.media.basePath);
+app.use('/media', express.static(mediaPath, { maxAge: '30d' }));
 
 // Serve Vite-built dashboard SPA
 const dashboardPath = path.join(__dirname, '..', 'dashboard', 'dist');

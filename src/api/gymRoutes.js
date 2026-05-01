@@ -1,9 +1,10 @@
 'use strict';
-const express = require('express');
+const express   = require('express');
+const mongoose  = require('mongoose');
 const { query, param, validationResult } = require('express-validator');
-const router  = express.Router();
-const Gym   = require('../db/gymModel');
-const Photo = require('../db/photoModel');
+const router    = express.Router();
+const Gym       = require('../db/gymModel');
+const Photo     = require('../db/photoModel');
 
 const { ok, err, validate } = require('../utils/apiUtils');
 
@@ -483,54 +484,32 @@ router.get('/export', async (req, res) => {
  *         description: Gym not found
  */
 // GET /api/gyms/photos — paginated photo library (MUST be before /:id)
+// Queries the gym_photos collection (Photo model) — NOT rawPhotos embedded arrays.
+// This surfaces all 26k+ downloaded media records.
 router.get('/photos', async (req, res) => {
   try {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(200, parseInt(req.query.limit) || 60);
     const skip  = (page - 1) * limit;
-    
-    const pipeline = [
-      { $match: { rawPhotos: { $type: 'array', $not: { $size: 0 } } } }
-    ];
 
-    if (req.query.gymId) {
-      pipeline[0].$match._id = new require('mongoose').Types.ObjectId(req.query.gymId);
+    const filter = {};
+    if (req.query.gymId && mongoose.isValidObjectId(req.query.gymId)) {
+      filter.gymId = new mongoose.Types.ObjectId(req.query.gymId);
     }
+    if (req.query.type) filter.type = req.query.type;
 
-    // Unwind the array and get the index to create a stable unique ID
-    pipeline.push({ $unwind: { path: '$rawPhotos', includeArrayIndex: 'photoIndex' } });
-
-    if (req.query.type) {
-      pipeline.push({ $match: { 'rawPhotos.type': req.query.type } });
-    }
-
-    pipeline.push({
-      $project: {
-        _id: { $concat: [{ $toString: '$_id' }, '_', { $toString: '$photoIndex' }] },
-        gymId: {
-          _id: '$_id',
-          name: '$name',
-          areaName: '$areaName'
-        },
-        publicUrl: '$rawPhotos.publicUrl',
-        thumbnailUrl: '$rawPhotos.thumbnailUrl',
-        originalUrl: '$rawPhotos.originalUrl',
-        width: '$rawPhotos.width',
-        height: '$rawPhotos.height',
-        type: { $ifNull: ['$rawPhotos.type', 'photo'] },
-        sizeBytes: { $ifNull: ['$rawPhotos.sizeBytes', 125000] }, // Fake size if missing
-        createdAt: { $ifNull: ['$rawPhotos.createdAt', '$createdAt'] }
-      }
-    });
-
-    const [photos, totalStats] = await Promise.all([
-      Gym.aggregate([...pipeline, { $skip: skip }, { $limit: limit }]),
-      Gym.aggregate([...pipeline, { $count: 'total' }])
+    const [photos, total, sizeAgg] = await Promise.all([
+      Photo.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('gymId', 'name areaName')
+        .lean(),
+      Photo.countDocuments(filter),
+      Photo.aggregate([{ $match: filter }, { $group: { _id: null, total: { $sum: '$sizeBytes' } } }]),
     ]);
 
-    const total = totalStats.length > 0 ? totalStats[0].total : 0;
-    const totalSize = total * 125000; // Estimated total volume
-
+    const totalSize = sizeAgg[0]?.total || 0;
     ok(res, { photos, pagination: { page, limit, total, pages: Math.ceil(total / limit) }, totalSize });
   } catch (e) { err(res, e.message); }
 });
