@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   Building2, Dumbbell, Calendar, Globe2, Brain, BarChart3, RefreshCw,
-  FlaskConical, Trash2, XCircle, Plus, Rocket
+  FlaskConical, Trash2, XCircle, Plus, Rocket, ImagePlay
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { api } from '../api/client';
@@ -13,6 +13,7 @@ export default function SystemPanel() {
   const [schedule, setSchedule] = useState([]);
   const [health, setHealth] = useState({});
   const [addCity, setAddCity] = useState({ name: '', frequency: 'weekly' });
+  const [photoSync, setPhotoSync] = useState(null); // photo sync status
 
   // Modals
   const [crawlCityModal, setCrawlCityModal] = useState(false);
@@ -32,10 +33,11 @@ export default function SystemPanel() {
 
   const fetchHealth = useCallback(async () => {
     try {
-      const [evtRes, qRes, cqRes] = await Promise.all([
+      const [evtRes, qRes, cqRes, syncRes] = await Promise.all([
         api.get('/api/events/stats').catch(() => ({})),
         api.get('/api/crawl/queue/stats').catch(() => ({ queue: {} })),
         api.get('/api/chains/crawl/queue-stats').catch(() => ({ queue: {} })),
+        api.get('/api/system/media/photo-sync/status').catch(() => null),
       ]);
       setHealth({
         sseClients: evtRes?.sseClients || 0,
@@ -44,6 +46,7 @@ export default function SystemPanel() {
         qWaiting: qRes?.queue?.waiting || 0,
         chainQ: `${cqRes?.queue?.active || 0}/${cqRes?.queue?.waiting || 0}`,
       });
+      if (syncRes?.status) setPhotoSync(syncRes.status);
     } catch {}
   }, []);
 
@@ -122,6 +125,19 @@ export default function SystemPanel() {
   const recalcScores = async () => { if (!confirm('Recalculate quality scores for all gyms?')) return; try { await api.post('/api/system/recalculate-scores'); toast('Recalculation started', 'info'); } catch { toast('Failed', 'error'); } };
   const vacuumLogs = async () => { if (!confirm('Delete all log files?')) return; try { const res = await api.post('/api/system/vacuum-logs'); toast(res?.message || 'Done', 'info'); } catch { toast('Failed', 'error'); } };
   const testEvent = async () => { try { await api.post('/api/events/test', {}); toast('Test event sent', 'info'); } catch { toast('Failed', 'error'); } };
+  const triggerPhotoSync = async () => {
+    try {
+      const res = await api.post('/api/system/media/photo-sync/trigger');
+      if (res?.success === false) {
+        toast(res?.message || 'Sync already running', 'warning');
+      } else {
+        toast('Photo sync started in background', 'success');
+        // Poll status after a short delay
+        setTimeout(fetchHealth, 2000);
+      }
+    } catch { toast('Failed to trigger photo sync', 'error'); }
+  };
+
   const tagExisting = async () => {
     if (!confirm('Tag all existing gyms with matching chain names?')) return;
     try { const res = await api.post('/api/chains/tag-existing'); toast(res?.message || 'Tagged', 'success'); } catch { toast('Failed', 'error'); }
@@ -160,6 +176,37 @@ export default function SystemPanel() {
           <CmdGroup label="Chain Operations">
             <button className="btn purple" onClick={() => { setChainCrawlSlug(chainsCache[0]?.slug || ''); setChainCrawlModal(true); }}>🔗 Crawl Chain</button>
             <button className="btn purple" onClick={tagExisting}>🏷️ Tag Existing</button>
+          </CmdGroup>
+
+          <CmdGroup label="Media Operations">
+            <button
+              className="btn"
+              onClick={triggerPhotoSync}
+              disabled={photoSync?.isLocked}
+              style={{
+                background: photoSync?.isLocked
+                  ? 'rgba(139,92,246,0.15)'
+                  : 'linear-gradient(135deg, rgba(139,92,246,0.25), rgba(109,40,217,0.35))',
+                border: '1px solid rgba(139,92,246,0.5)',
+                color: '#c4b5fd',
+                boxShadow: photoSync?.isLocked ? 'none' : '0 0 12px rgba(139,92,246,0.25)',
+                opacity: photoSync?.isLocked ? 0.6 : 1,
+                cursor: photoSync?.isLocked ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <ImagePlay size={13} />
+              {photoSync?.isLocked
+                ? `Syncing… ${photoSync?.currentCycleProgress ?? 0}%`
+                : `Sync Photos ${photoSync?.currentCycleProgress != null ? `(${photoSync.currentCycleProgress}%)` : ''}`
+              }
+            </button>
+            {photoSync && (
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--mono)', paddingTop: 2, gridColumn: '1 / -1' }}>
+                Cycle {(photoSync.completedCycles || 0) + 1} &middot; {photoSync.currentCycleProcessed?.toLocaleString() ?? 0}/{photoSync.currentCycleTotalGyms?.toLocaleString() ?? '?'} gyms
+                {photoSync.lastRunAt && <> &middot; Last: {new Date(photoSync.lastRunAt).toLocaleDateString()}</>}
+              </div>
+            )}
           </CmdGroup>
 
           <CmdGroup label="Data Intelligence">

@@ -24,6 +24,7 @@ const { analyzeGymSentiment } = require('../services/intelligence/sentiment');
 const { Review } = require('../db/reviewModel');
 const { crawlQueue, chainCrawlQueue, mediaQueue } = require('../queue/queues');
 const SystemState = require('../db/systemStateModel');
+const { runPhotoSync, getSyncStatus } = require('../services/photoSyncService');
 
 const LOG_DIR = cfg.log.dir;
 let lastCpuInfo = os.cpus();
@@ -559,4 +560,41 @@ router.post('/recalculate-scores', async (req, res) => {
   })();
 });
 
+// ── POST /api/system/media/photo-sync/trigger — manual sync trigger ──────────
+// Responds 202 immediately; runs the sync as a detached async job.
+// If a sync is already running the lock prevents double execution.
+router.post('/media/photo-sync/trigger', async (req, res) => {
+  try {
+    const status = await getSyncStatus();
+    if (status.isLocked) {
+      return res.status(409).json({
+        success: false,
+        message: `Sync already running (started by ${status.lockedBy} at ${status.lastRunAt?.toISOString()})`,
+        status,
+      });
+    }
+
+    // Respond immediately — don't await the sync
+    res.status(202).json({ success: true, message: 'Photo sync started in background. Check /status for progress.' });
+
+    runPhotoSync('manual').catch(e => {
+      logger.error(`[system/photo-sync] Manual trigger error: ${e.stack || e}`);
+    });
+  } catch (e) {
+    logger.error(`[system/photo-sync] Trigger error: ${e.message}`);
+    err(res, e.message);
+  }
+});
+
+// ── GET /api/system/media/photo-sync/status — rotation progress ──────────────
+router.get('/media/photo-sync/status', async (req, res) => {
+  try {
+    const status = await getSyncStatus();
+    ok(res, { status });
+  } catch (e) {
+    err(res, e.message);
+  }
+});
+
 module.exports = router;
+

@@ -11,6 +11,7 @@ const Gym = require('../db/gymModel');
 const { addCityJob, addGymNameJob } = require('../queue/queues');
 const { FITNESS_CATEGORIES } = require('../scraper/googleMapsScraper');
 const bus = require('./eventBus');
+const { runPhotoSync } = require('./photoSyncService');
 
 const SCHEDULE_PATH = path.resolve(__dirname, '../../config/schedule.json');
 
@@ -247,12 +248,23 @@ function startScheduler() {
     await queueIncompleteGyms('enrichment-cron');
   }, { timezone: tz });
 
+  // Photo sync: Every day at 4:00 AM IST = 22:30 UTC previous day
+  cron.schedule('30 22 * * *', async () => {
+    logger.info('[scheduler] Triggering nightly photo sync (4 AM IST)...');
+    try {
+      await runPhotoSync('cron');
+    } catch (e) {
+      logger.error(`[scheduler] Photo sync cron failed: ${e.message}`);
+    }
+  }, { timezone: tz });
+
   logger.info('⏰ Scheduler started:');
   logger.info('   • Weekly cities    → every Sunday 02:00 AM IST');
   logger.info('   • Biweekly cities  → 1st & 3rd Sunday 03:00 AM IST');
   logger.info('   • Monthly cities   → 1st Sunday 04:00 AM IST');
   logger.info('   • Staleness check  → every Wednesday 03:00 AM IST');
   logger.info('   • Enrichment       → every Friday 03:00 AM IST');
+  logger.info('   • Photo sync       → every day 04:00 AM IST');
 }
 
 module.exports = {
