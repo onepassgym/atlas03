@@ -112,6 +112,15 @@ export default function GymDrawer({ gymId, onClose }) {
     loadEnrichLogs();
   }, [gymId, loadEnrichLogs]);
 
+  // Lock body scroll when drawer is open
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
+
   if (!gymId) return null;
 
   const enrichMeta = gym?.enrichmentMeta;

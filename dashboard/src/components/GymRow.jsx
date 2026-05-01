@@ -1,3 +1,4 @@
+import React from 'react';
 import { Star, MessageCircle, Target, MapPin, Phone, Globe, ImageIcon, Award } from 'lucide-react';
 
 function formatCategory(cat) {
@@ -104,7 +105,7 @@ function RatingStars({ rating }) {
   );
 }
 
-export default function GymRow({ gym, onClick, searchTerm = '' }) {
+export default React.memo(function GymRow({ gym, onClick, searchTerm = '' }) {
   const categoryLabel = formatCategory(gym.category) || (gym.categoryId?.label ? formatCategory(gym.categoryId.label) : null);
 
   return (
@@ -161,4 +162,4 @@ export default function GymRow({ gym, onClick, searchTerm = '' }) {
       </div>
     </div>
   );
-}
+});

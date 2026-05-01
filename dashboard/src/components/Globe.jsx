@@ -1,13 +1,20 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import createGlobe from 'cobe';
 import { useApp } from '../context/AppContext';
 
 export default function Globe() {
   const canvasRef = useRef(null);
   const { theme } = useApp();
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   useEffect(() => {
-    if (!canvasRef.current) return;
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize, { passive: true });
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile || !canvasRef.current) return;
     let phi = 0;
     let globe;
     const isDark = theme === 'dark';
@@ -44,6 +51,8 @@ export default function Globe() {
     }
     return () => globe?.destroy?.();
   }, [theme]);
+
+  if (isMobile) return null;
 
   return (
     <div className="globe-canvas-container">

@@ -91,7 +91,7 @@ export default function NetworkTelemetry({ stats, queueStats }) {
         </div>
 
         {vps && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginTop: 10, paddingTop: 16, borderTop: '1px dashed var(--border)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 12, marginTop: 10, paddingTop: 16, borderTop: '1px dashed var(--border)' }}>
             <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}><Cpu size={12}/> CPU LOAD</div>
               <div style={{ fontSize: 18, fontFamily: 'var(--mono)', fontWeight: 800, color: vps.cpu.usagePercent > 80 ? 'var(--danger)' : 'var(--success)' }}>

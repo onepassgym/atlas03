@@ -341,213 +341,111 @@ export default function GlobePage() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.4 }}
-      style={{ padding: 0, height: 'calc(100vh - 100px)', overflow: 'hidden' }}
+      className="globe-page-container"
     >
+      {/* ── Background Globe Canvas ────── */}
       <div
         ref={globeContainerRef}
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 340px',
-          height: '100%',
-          background: isFullscreen ? 'var(--bg-primary)' : undefined,
-        }}
+        className="globe-canvas-wrapper"
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerOut={handlePointerOut}
+        onPointerMove={handlePointerMove}
+        style={{ background: isFullscreen ? 'var(--bg-primary)' : '' }}
       >
-        {/* ── Globe Canvas & CREATIVE OVERLAY ────── */}
-        <div style={{
-          position: 'relative', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', overflow: 'hidden', cursor: 'grab',
-          background: 'radial-gradient(circle at center, rgba(15, 23, 42, 0.8) 0%, rgba(0,0,0,1) 100%)'
-        }}
-          onPointerDown={handlePointerDown}
-          onPointerUp={handlePointerUp}
-          onPointerOut={handlePointerOut}
-          onPointerMove={handlePointerMove}
-        >
-          {/* Creative HUD Components */}
-          <TelemetryOverlay isTouring={isTouring} isPaused={isPaused} />
+        <TelemetryOverlay isTouring={isTouring} isPaused={isPaused} />
+        
+        {/* Glow behind globe */}
+        <div className="globe-ambient-glow" />
+        
+        <canvas
+          ref={canvasRef}
+          style={{
+            width: '100%', maxWidth: 800, aspectRatio: '1',
+            touchAction: 'none',
+            transform: `scale(${zoom})`,
+            transition: 'transform 0.1s ease-out',
+            zIndex: 2, position: 'relative'
+          }}
+        />
 
-          <div style={{ 
-             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-             width: '70%', height: '70%', background: 'radial-gradient(circle, var(--accent) 0%, transparent 60%)',
-             opacity: 0.1, pointerEvents: 'none', filter: 'blur(40px)', zIndex: 0
-          }} />
-          <canvas
-            ref={canvasRef}
-            style={{
-              width: '100%', maxWidth: 700, aspectRatio: '1',
-              touchAction: 'none',
-              transform: `scale(${zoom})`,
-              transition: 'transform 0.1s ease-out',
-              zIndex: 2, position: 'relative'
-            }}
-          />
-
-          {/* ── Pause & Fullscreen buttons ── */}
-          <div style={{ position: 'absolute', top: 24, right: 24, zIndex: 5, display: 'flex', gap: 12 }}>
-            <button
-              onClick={togglePause}
-              className="btn sm"
-              style={{ background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--accent)' }}
-            >
-              {isPaused ? <Play size={16} /> : <Pause size={16} />}
-            </button>
-            <button
-              onClick={toggleFullscreen}
-              className="btn sm"
-              style={{ background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--accent)' }}
-            >
-              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-          </div>
-
-          {/* ── HUD Crosshairs ── */}
-          <div style={{ position: 'absolute', pointerEvents: 'none', top: '50%', left: '50%', width: 400, height: 400, transform: 'translate(-50%, -50%)', border: '1px dashed rgba(139, 92, 246, 0.15)', borderRadius: '50%' }} />
-          <div style={{ position: 'absolute', pointerEvents: 'none', top: '50%', left: '50%', width: 20, height: 20, transform: 'translate(-50%, -50%)' }}>
-             <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: 1, background: 'rgba(139, 92, 246, 0.5)' }} />
-             <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: 1, background: 'rgba(139, 92, 246, 0.5)' }} />
-          </div>
-
-          {/* ── Live Animated Events Overlay ── */}
-          <div style={{ position: 'absolute', bottom: 100, left: 32, width: 300, pointerEvents: 'none', zIndex: 10 }}>
-            <AnimatePresence>
-              {events.filter(e => !e.type?.startsWith('system:')).slice(0, 3).map((e, i) => (
-                <motion.div
-                  key={`${e.timestamp}-${i}`}
-                  initial={{ opacity: 0, x: -50, scale: 0.9 }}
-                  animate={{ opacity: 1 - (i * 0.25), x: 0, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                  style={{
-                    background: 'rgba(15, 23, 42, 0.75)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid rgba(139, 92, 246, 0.3)',
-                    padding: '8px 12px',
-                    borderRadius: 8,
-                    marginBottom: 8,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10
-                  }}
-                >
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', boxShadow: '0 0 8px var(--success)' }} />
-                  <div style={{ flex: 1, overflow: 'hidden' }}>
-                    <div style={{ fontSize: 10, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, fontFamily: 'var(--mono)' }}>
-                      {e.type.replace('crawl:', '').replace('gym:', '').replace('job:', '')}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {e.data?.gymName || e.data?.cityName || e.data?.name || 'Processing...'}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-
-          {/* ── Center label ── */}
-          <div style={{
-            position: 'absolute', bottom: 32, left: '50%', transform: 'translateX(-50%)',
-            textAlign: 'center', pointerEvents: 'none',
-            background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(12px)',
-            padding: '8px 16px', borderRadius: 20, border: '1px solid rgba(139, 92, 246, 0.2)',
-            boxShadow: '0 0 20px rgba(139, 92, 246, 0.15)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center'
-          }}>
-            <div style={{
-              fontSize: 10, color: isTouring ? 'var(--warning)' : 'var(--accent)', fontWeight: 700,
-              textTransform: 'uppercase', letterSpacing: 2,
-              fontFamily: 'var(--mono)', display: 'flex', alignItems: 'center', gap: 6
-            }}>
-              <span className="live-dot" style={{ background: isTouring ? 'var(--warning)' : 'var(--success)', boxShadow: `0 0 8px ${isTouring ? 'var(--warning)' : 'var(--success)'}` }} /> 
-              {isTouring ? 'AUTONOMOUS RECON ACTIVE' : 'SATELLITE LINK ACTIVE'}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-              {isTouring ? 'Scanning high-density targets automatically' : 'Drag to explore · Click city to pinpoint'}
-            </div>
+        {/* ── Center label ── */}
+        <div className="globe-center-label">
+          <div className="globe-status-text">
+            <span className="live-dot" style={{ background: isTouring ? 'var(--warning)' : 'var(--success)', boxShadow: `0 0 8px ${isTouring ? 'var(--warning)' : 'var(--success)'}` }} /> 
+            {isTouring ? 'AUTONOMOUS RECON ACTIVE' : 'SATELLITE LINK ACTIVE'}
           </div>
         </div>
+      </div>
 
-        {/* ── Sidebar HUD ────── */}
-        <div style={{
-          borderLeft: '1px solid rgba(255,255,255,0.05)',
-          background: 'linear-gradient(135deg, rgba(15,23,42,0.9) 0%, rgba(15,23,42,0.7) 100%)',
-          backdropFilter: 'blur(20px)',
-          padding: '32px 24px',
-          overflowY: 'auto',
-          display: 'flex', flexDirection: 'column', gap: 24,
-          boxShadow: '-10px 0 30px rgba(0,0,0,0.5)',
-          position: 'relative', zIndex: 10
-        }}>
-          {/* Decorative HUD Lines */}
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.5 }} />
-
-          {/* Title and Controls */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-              <div style={{ padding: 8, background: 'rgba(139, 92, 246, 0.15)', borderRadius: 12, border: '1px solid rgba(139, 92, 246, 0.3)' }}>
-                <Globe2 size={24} style={{ color: 'var(--accent)' }} />
-              </div>
-              <div>
-                <h2 style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, margin: 0, color: '#fff', textShadow: '0 0 20px rgba(139,92,246,0.4)' }}>
-                  ATLAS COMMAND
-                </h2>
-                <div style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>Global Reconnaissance</div>
-              </div>
-            </div>
+      {/* ── HUD Overlay Layer ────── */}
+      <div className="globe-hud-layer">
+        
+        {/* TOP SECTION: Header & Actions */}
+        <div className="globe-hud-top">
+          {/* Top Left: Controls */}
+          <div className="globe-hud-actions pointer-auto">
+            <button onClick={togglePause} className="btn sm glass-btn">
+              {isPaused ? <Play size={16} /> : <Pause size={16} />}
+            </button>
+            <button onClick={toggleFullscreen} className="btn sm glass-btn">
+              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
             <button 
               onClick={toggleTour}
-              className={`btn sm ${isTouring ? 'primary' : 'secondary'}`}
-              style={{
-                background: isTouring ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.05)',
-                color: isTouring ? 'var(--warning)' : 'var(--text-muted)',
-                borderColor: isTouring ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255,255,255,0.1)',
-                display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, padding: '6px 10px'
-              }}
+              className={`btn sm glass-btn ${isTouring ? 'tour-active' : ''}`}
             >
               <Target size={14} className={isTouring ? 'pulse' : ''} />
               {isTouring ? 'TOURING' : 'AUTO-TOUR'}
             </button>
           </div>
 
-          {/* Quick Stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <StatBox icon={<Building2 size={16} />} label="Total Gyms" value={totalGyms} color="#3b82f6" />
-            <StatBox icon={<MapPin size={16} />} label="Cities" value={totalCities} color="#8b5cf6" />
-            <StatBox icon={<Dumbbell size={16} />} label="Reviews" value={totalReviews} color="#10b981" />
-            <StatBox icon={<Search size={16} />} label="Nodes" value={dynamicMarkers.length} color="#06b6d4" />
+          {/* Top Center: Title */}
+          <div className="globe-hud-header pointer-auto">
+            <div className="atlas-logo">
+              <Globe2 size={28} />
+            </div>
+            <h2 className="atlas-title">ATLAS COMMAND</h2>
+            <div className="atlas-subtitle">Global Reconnaissance</div>
           </div>
 
-          {/* Add New City Form */}
-          <form onSubmit={handleCrawlCity} style={{ 
-            display: 'flex', gap: 8, padding: 4, 
-            background: 'rgba(0,0,0,0.3)', borderRadius: 12,
-            border: '1px solid rgba(255,255,255,0.05)',
-            boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.2)'
-          }}>
-             <input 
-               type="text" 
-               className="input" 
-               placeholder="Deploy scraper to new city..." 
-               value={newCityName}
-               onChange={e => setNewCityName(e.target.value)}
-               disabled={isGeocoding}
-               style={{ flex: 1, background: 'transparent', border: 'none', padding: '8px 12px', fontSize: 13, color: '#fff', outline: 'none' }}
-             />
-             <button type="submit" className="btn accent" disabled={!newCityName.trim() || isGeocoding} style={{ padding: '8px 16px', borderRadius: 8, fontWeight: 700 }}>
-                {isGeocoding ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }}/> : <Play size={14} fill="currentColor" />}
-             </button>
-          </form>
+          {/* Top Right: Placeholder for symmetry */}
+          <div className="globe-hud-actions right pointer-auto" style={{ opacity: 0, pointerEvents: 'none' }}>
+             <button className="btn sm glass-btn"><Search size={16} /></button>
+          </div>
+        </div>
 
-          {/* City List */}
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{
-              fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2,
-              color: 'var(--text-muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12,
-            }}>
-              Active Nodes
-              <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(255,255,255,0.1), transparent)' }} />
+        {/* BOTTOM SECTION: Stats, Search & Active Nodes */}
+        <div className="globe-hud-bottom pointer-auto">
+          
+          <div className="globe-glass-panel">
+            {/* Quick Stats */}
+            <div className="globe-stats-grid">
+              <StatBox icon={<Building2 size={16} />} label="Total Gyms" value={totalGyms} color="#3b82f6" />
+              <StatBox icon={<MapPin size={16} />} label="Cities" value={totalCities} color="#8b5cf6" />
+              <StatBox icon={<Dumbbell size={16} />} label="Reviews" value={totalReviews} color="#10b981" />
+              <StatBox icon={<Search size={16} />} label="Nodes" value={dynamicMarkers.length} color="#06b6d4" />
             </div>
-            <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, paddingRight: 8 }}>
+
+            <div className="globe-bottom-divider" />
+
+            {/* Deploy New City */}
+            <form onSubmit={handleCrawlCity} className="globe-deploy-form">
+               <input 
+                 type="text" 
+                 className="globe-deploy-input" 
+                 placeholder="Enter city to deploy scraper..." 
+                 value={newCityName}
+                 onChange={e => setNewCityName(e.target.value)}
+                 disabled={isGeocoding}
+               />
+               <button type="submit" className="btn accent globe-deploy-btn" disabled={!newCityName.trim() || isGeocoding}>
+                  {isGeocoding ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }}/> : <Play size={14} fill="currentColor" />} DEPLOY
+               </button>
+            </form>
+
+            {/* Active Nodes Horizontal Carousel */}
+            <div className="globe-nodes-carousel custom-scrollbar">
               <AnimatePresence>
               {sortedMarkers.map((city, i) => {
                 const count = cityStats[city.name?.toLowerCase()] || 0;
@@ -558,101 +456,205 @@ export default function GlobePage() {
                 return (
                   <motion.div
                     key={city.name}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.03, duration: 0.3 }}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.02, duration: 0.3 }}
                     onHoverStart={() => setHoveredCity(city.name)}
                     onHoverEnd={() => setHoveredCity(null)}
                     onClick={() => handleCityClick(city)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '10px 14px', borderRadius: 10,
-                      background: isHovered ? 'rgba(255,255,255,0.05)' : 'transparent',
-                      border: `1px solid ${isHovered ? 'rgba(255,255,255,0.1)' : 'transparent'}`,
-                      cursor: 'pointer', transition: 'all 0.2s',
-                    }}
+                    className={`node-chip ${isHovered ? 'hovered' : ''}`}
+                    style={{ '--node-color': color }}
                   >
-                    <div style={{ position: 'relative', width: 10, height: 10 }}>
-                      <div style={{
-                        position: 'absolute', inset: 0, borderRadius: '50%', background: color,
-                        boxShadow: `0 0 10px ${color}`, opacity: isHovered ? 1 : 0.7
-                      }} />
-                      {(isQueued || isHovered) && (
-                        <motion.div
-                          animate={{ scale: [1, 2.5], opacity: [0.8, 0] }}
-                          transition={{ repeat: Infinity, duration: 1.5 }}
-                          style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: color }}
-                        />
-                      )}
+                    <div className="node-indicator">
+                      <div className="node-dot" />
+                      {(isQueued || isHovered) && <motion.div className="node-pulse" animate={{ scale: [1, 2.5], opacity: [0.8, 0] }} transition={{ repeat: Infinity, duration: 1.5 }} />}
                     </div>
-                    
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ 
-                        fontSize: 14, fontWeight: isQueued ? 700 : 600,
-                        color: isHovered ? '#fff' : 'var(--text-primary)',
-                        transition: 'color 0.2s'
-                      }}>
-                        {city.name}
-                      </span>
-                      {isQueued && <span style={{ fontSize: 9, color: color, textTransform: 'uppercase', letterSpacing: 1 }}>Locating...</span>}
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{
-                        fontSize: 13, fontFamily: 'var(--mono)', color: isHovered ? color : 'var(--text-muted)',
-                        fontWeight: 700, transition: 'color 0.2s'
-                      }}>
-                        {count > 0 ? count.toLocaleString() : '—'}
-                      </span>
-                      <MapPin size={14} style={{
-                        color: color, opacity: isHovered ? 1 : 0,
-                        transition: 'opacity 0.2s, transform 0.2s',
-                        transform: isHovered ? 'translateY(-2px)' : 'translateY(0)'
-                      }} />
-                    </div>
+                    <span className="node-name">{city.name}</span>
+                    <span className="node-count">{count > 0 ? count.toLocaleString() : '—'}</span>
                   </motion.div>
                 );
               })}
               </AnimatePresence>
             </div>
           </div>
-          
+
         </div>
       </div>
 
       <style>{`
-        @media (max-width: 900px) {
-          div[style*="grid-template-columns: 1fr 340px"] {
-            grid-template-columns: 1fr !important;
-          }
+        /* ── Fresh Symmetric Layout ── */
+        .globe-page-container {
+          position: relative;
+          height: calc(100vh - 100px);
+          overflow: hidden;
+          background: radial-gradient(circle at center, rgba(15, 23, 42, 1) 0%, rgba(0,0,0,1) 100%);
         }
+        
+        .globe-canvas-wrapper {
+          position: absolute; inset: 0;
+          display: flex; align-items: center; justify-content: center;
+          cursor: grab; z-index: 1;
+        }
+
+        .globe-ambient-glow {
+          position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+          width: 70vw; height: 70vw; max-width: 800px; max-height: 800px;
+          background: radial-gradient(circle, var(--accent) 0%, transparent 60%);
+          opacity: 0.08; pointer-events: none; filter: blur(60px); z-index: 0;
+        }
+
+        .globe-center-label {
+          position: absolute; top: 50%; left: 50%; transform: translate(-50%, 200px);
+          text-align: center; pointer-events: none; z-index: 5;
+        }
+        .globe-status-text {
+          font-size: 10px; color: var(--accent); font-weight: 700;
+          text-transform: uppercase; letter-spacing: 2px; font-family: var(--mono);
+          display: flex; align-items: center; justify-content: center; gap: 6px;
+          background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(8px);
+          padding: 6px 16px; border-radius: 20px; border: 1px solid rgba(139, 92, 246, 0.15);
+        }
+
+        /* ── HUD Layer ── */
+        .globe-hud-layer {
+          position: absolute; inset: 0; z-index: 10;
+          pointer-events: none;
+          display: flex; flex-direction: column; justify-content: space-between;
+          padding: 24px;
+        }
+        .pointer-auto { pointer-events: auto; }
+
+        .globe-hud-top {
+          display: flex; justify-content: space-between; align-items: flex-start;
+          width: 100%; max-width: 1200px; margin: 0 auto;
+        }
+
+        .globe-hud-actions {
+          display: flex; gap: 8px; flex: 1;
+        }
+        .globe-hud-actions.right { justify-content: flex-end; }
+
+        .glass-btn {
+          background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(12px);
+          border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary);
+        }
+        .glass-btn:hover { background: rgba(15, 23, 42, 0.8); border-color: var(--accent); color: var(--accent); }
+        .glass-btn.tour-active { color: var(--warning); border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.15); }
+
+        .globe-hud-header {
+          display: flex; flex-direction: column; align-items: center; flex: 1;
+        }
+        .atlas-logo {
+          padding: 10px; background: rgba(139, 92, 246, 0.15); border-radius: 50%;
+          border: 1px solid rgba(139, 92, 246, 0.3); margin-bottom: 8px;
+          box-shadow: 0 0 24px rgba(139, 92, 246, 0.3); color: var(--accent);
+        }
+        .atlas-title {
+          font-size: 20px; font-weight: 900; letter-spacing: 3px; color: #fff;
+          text-shadow: 0 0 20px rgba(139,92,246,0.6); margin: 0 0 4px 0; text-align: center;
+        }
+        .atlas-subtitle {
+          font-size: 9px; color: var(--accent); font-weight: 700; letter-spacing: 2px;
+          text-transform: uppercase; font-family: var(--mono); text-align: center;
+        }
+
+        .globe-hud-bottom {
+          display: flex; flex-direction: column; gap: 16px;
+          width: 100%; max-width: 800px; margin: 0 auto;
+        }
+
+        .globe-glass-panel {
+          background: linear-gradient(180deg, rgba(15, 23, 42, 0.6) 0%, rgba(10, 14, 26, 0.8) 100%);
+          backdrop-filter: blur(16px);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 24px;
+          padding: 20px;
+          box-shadow: 0 20px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+        }
+
+        .globe-stats-grid {
+          display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;
+        }
+
+        .globe-bottom-divider {
+          height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+          margin: 16px 0;
+        }
+
+        .globe-deploy-form {
+          display: flex; gap: 8px; padding: 6px;
+          background: rgba(0,0,0,0.3); border-radius: 16px;
+          border: 1px solid rgba(255,255,255,0.05);
+          box-shadow: inset 0 2px 10px rgba(0,0,0,0.2);
+          margin-bottom: 16px;
+        }
+        .globe-deploy-input {
+          flex: 1; background: transparent; border: none; padding: 8px 16px;
+          font-size: 13px; color: #fff; outline: none; font-family: var(--font);
+        }
+        .globe-deploy-btn {
+          padding: 8px 20px; border-radius: 12px; font-weight: 700; letter-spacing: 1px;
+        }
+
+        .globe-nodes-carousel {
+          display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px;
+          -webkit-overflow-scrolling: touch; scrollbar-width: none;
+        }
+        .globe-nodes-carousel::-webkit-scrollbar { display: none; }
+        
+        .node-chip {
+          display: flex; align-items: center; gap: 10px;
+          padding: 8px 14px; border-radius: 20px;
+          background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+          cursor: pointer; transition: all 0.2s; white-space: nowrap; flex-shrink: 0;
+        }
+        .node-chip.hovered {
+          background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15);
+          transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .node-indicator { position: relative; width: 8px; height: 8px; }
+        .node-dot {
+          position: absolute; inset: 0; border-radius: 50%; background: var(--node-color);
+          box-shadow: 0 0 8px var(--node-color); opacity: 0.8;
+        }
+        .node-chip.hovered .node-dot { opacity: 1; }
+        .node-pulse { position: absolute; inset: 0; border-radius: 50%; background: var(--node-color); }
+        .node-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .node-count { font-size: 12px; font-family: var(--mono); color: var(--node-color); font-weight: 700; }
+
+        /* ── Mobile Responsive Overrides ── */
+        @media (max-width: 768px) {
+          .globe-hud-layer { padding: 12px; }
+          .globe-hud-top { flex-direction: column-reverse; align-items: center; gap: 16px; margin-top: 10px; }
+          .globe-hud-actions { width: 100%; justify-content: center; }
+          .globe-hud-actions.right { display: none; }
+          
+          .globe-stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+          .globe-glass-panel { padding: 16px; border-radius: 20px; }
+          .globe-center-label { transform: translate(-50%, 150px); }
+          .atlas-title { font-size: 18px; letter-spacing: 2px; }
+          .atlas-logo { padding: 8px; }
+          .atlas-logo svg { width: 20px; height: 20px; }
+        }
+
         .live-dot {
           width: 6px; height: 6px; background: var(--success); border-radius: 50%;
-          box-shadow: 0 0 8px var(--success);
-          animation: pulse-dot 2s infinite;
+          box-shadow: 0 0 8px var(--success); animation: pulse-dot 2s infinite;
         }
         @keyframes pulse-dot {
-          0% { opacity: 1; transform: scale(1); }
+          0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.4; transform: scale(1.2); }
-          100% { opacity: 1; transform: scale(1); }
         }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.3); border-radius: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.6); }
 
         /* ── CREATIVE UI EFFECTS ── */
         .hud-grid {
-          position: absolute;
-          inset: -100%;
+          position: absolute; inset: -100%;
           background-image: 
             linear-gradient(rgba(139, 92, 246, 0.1) 1px, transparent 1px),
             linear-gradient(90deg, rgba(139, 92, 246, 0.1) 1px, transparent 1px);
           background-size: 40px 40px;
           transform: perspective(600px) rotateX(60deg) translateY(-100px) translateZ(-200px);
-          animation: grid-move 10s linear infinite;
-          opacity: 0.4;
-          pointer-events: none;
+          animation: grid-move 10s linear infinite; opacity: 0.4; pointer-events: none;
         }
         @keyframes grid-move {
           0% { transform: perspective(600px) rotateX(60deg) translateY(0) translateZ(-200px); }
@@ -660,24 +662,17 @@ export default function GlobePage() {
         }
 
         .radar-sweep {
-          position: absolute;
-          top: 50%; left: 50%;
-          width: 1000px; height: 1000px;
-          margin-top: -500px; margin-left: -500px;
+          position: absolute; top: 50%; left: 50%;
+          width: 1000px; height: 1000px; margin-top: -500px; margin-left: -500px;
           border-radius: 50%;
           background: conic-gradient(from 0deg, transparent 70%, rgba(139, 92, 246, 0.05) 90%, rgba(139, 92, 246, 0.3) 100%);
-          animation: radar-spin 4s linear infinite;
-          pointer-events: none;
+          animation: radar-spin 4s linear infinite; pointer-events: none;
         }
-        @keyframes radar-spin {
-          100% { transform: rotate(360deg); }
-        }
+        @keyframes radar-spin { 100% { transform: rotate(360deg); } }
 
         .corner-bracket {
-          position: absolute;
-          width: 40px; height: 40px;
-          border: 2px solid rgba(139, 92, 246, 0.4);
-          transition: all 0.3s;
+          position: absolute; width: 40px; height: 40px;
+          border: 2px solid rgba(139, 92, 246, 0.4); transition: all 0.3s;
         }
         .corner-bracket.top-left { top: 20px; left: 20px; border-right: none; border-bottom: none; }
         .corner-bracket.top-right { top: 20px; right: 20px; border-left: none; border-bottom: none; }
@@ -707,13 +702,9 @@ function TelemetryOverlay({ isTouring, isPaused }) {
 
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 1 }}>
-      {/* Moving Grid Background */}
       <div className="hud-grid" />
-      
-      {/* Radar Sweep */}
       {!isPaused && <div className="radar-sweep" />}
 
-      {/* Telemetry Text */}
       <div style={{ position: 'absolute', top: 24, left: 24, color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: 11, opacity: 0.8, textShadow: '0 0 8px rgba(139,92,246,0.5)' }}>
         SYS.CORE.OP: {isPaused ? 'STANDBY' : 'NOMINAL'}<br/>
         UPLINK_HASH: <span style={{ color: '#fff' }}>{hex1}</span><br/>
@@ -726,7 +717,6 @@ function TelemetryOverlay({ isTouring, isPaused }) {
         <div style={{ marginTop: 4, fontWeight: 700 }}>[{isTouring ? 'AUTO-TRACKING' : 'MANUAL OVERRIDE'}]</div>
       </div>
 
-      {/* Corner Brackets */}
       <div className="corner-bracket top-left" />
       <div className="corner-bracket top-right" />
       <div className="corner-bracket bottom-left" />
@@ -740,21 +730,21 @@ function StatBox({ icon, label, value, color }) {
     <motion.div
       whileHover={{ y: -2, borderColor: color, boxShadow: `0 8px 24px ${color}20` }}
       style={{
-        padding: '16px', borderRadius: 16,
+        padding: '12px 16px', borderRadius: 16,
         border: '1px solid rgba(255,255,255,0.05)', 
-        background: 'rgba(0,0,0,0.2)',
+        background: 'rgba(0,0,0,0.3)',
         backdropFilter: 'blur(10px)',
         transition: 'all 0.3s ease',
         cursor: 'default',
         position: 'relative', overflow: 'hidden'
       }}>
       <div style={{ position: 'absolute', top: 0, left: 0, width: 2, height: '100%', background: color, opacity: 0.8, boxShadow: `0 0 10px ${color}` }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, color }}>
         <div style={{ padding: 4, background: `${color}15`, borderRadius: 6 }}>{icon}</div>
         <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)' }}>{label}</span>
       </div>
       <div style={{
-        fontSize: 26, fontWeight: 900, color: '#fff',
+        fontSize: 22, fontWeight: 900, color: '#fff',
         fontVariantNumeric: 'tabular-nums', textShadow: '0 2px 10px rgba(0,0,0,0.3)'
       }}>
         {typeof value === 'number' ? value.toLocaleString() : value}

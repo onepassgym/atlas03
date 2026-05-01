@@ -154,9 +154,10 @@ export default function JobsPanel() {
       </div>
 
       {/* ── Jobs Table ────── */}
-      <div className="card" style={{ padding: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        <table className="data-table" id="jobs-table">
-          <thead>
+      <div className="card" style={{ padding: 0 }}>
+        <div className="table-responsive">
+          <table className="data-table" id="jobs-table">
+            <thead>
             <tr>
               <th>Type</th><th>Name</th><th>Status</th><th>Progress</th>
               <th className="col-hide-mobile">Batches</th><th>New</th><th className="col-hide-mobile">Updated</th><th>Failed</th><th className="col-hide-mobile">Errors</th><th className="col-hide-mobile">Duration</th><th className="col-hide-mobile">When</th><th>Actions</th>
@@ -241,7 +242,10 @@ export default function JobsPanel() {
             })}
           </tbody>
         </table>
-        <Pagination current={page} total={totalPages} onPage={p => fetchJobs(p)} />
+        </div>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
+          <Pagination current={page} total={totalPages} onPage={p => fetchJobs(p)} />
+        </div>
       </div>
 
       {/* Job Detail Drawer */}

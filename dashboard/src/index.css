@@ -106,15 +106,25 @@
   color-scheme: light;
 }
 
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
 body {
   font-family: var(--font);
   background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
-  overflow-x: hidden;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   transition: background 0.4s ease, color 0.4s ease;
+}
+
+@media (max-width: 640px) {
+  body {
+    padding-bottom: 70px; /* Accounts for fixed bottom navigation */
+  }
 }
 
 [data-theme="dark"] body::before,
@@ -147,6 +157,8 @@ body {
 #root {
   position: relative;
   z-index: 1;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 a { color: var(--accent); text-decoration: none; }
@@ -198,18 +210,52 @@ a:hover { text-decoration: underline; }
 }
 
 /* ── Layout ────────────────────────────────────────────────── */
+:root {
+  --spacing-xs: 8px;
+  --spacing-sm: 12px;
+  --spacing-md: 16px;
+  --spacing-lg: 20px;
+  --spacing-xl: 24px;
+  --container-px: var(--spacing-xl);
+  --card-px: var(--spacing-lg);
+  --card-py: var(--spacing-lg);
+}
+
+@media (max-width: 640px) {
+  :root {
+    --container-px: var(--spacing-sm);
+    --card-px: var(--spacing-md);
+    --card-py: var(--spacing-md);
+  }
+}
+
 .container {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 0 var(--container-px);
+  width: 100%;
 }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
-.grid-3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-md); margin-bottom: var(--spacing-lg); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-md); margin-bottom: var(--spacing-lg); }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--spacing-md); margin-bottom: var(--spacing-lg); }
+
+.fluid-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.fluid-grid-large {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 450px), 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
 @media (max-width: 768px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
-  .container { padding: 12px; }
 }
 
 /* ── Cards ─────────────────────────────────────────────────── */
@@ -219,8 +265,15 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--card-glass-border, var(--border));
   box-shadow: var(--card-glass-shadow, none);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: var(--card-py) var(--card-px);
   transition: all 0.3s ease;
+  min-width: 0;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .card:hover { border-color: var(--border-glow); background: var(--card-glass-bg-hover, var(--bg-card-hover)); }
 .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
@@ -370,8 +423,6 @@ select.input {
 /* ── Responsive — Tablet (768px) ──────────────────────────── */
 @media (max-width: 768px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
-  .container { padding: 12px; }
-  .card { padding: 14px; }
   .card-header { margin-bottom: 10px; }
   .card-title { font-size: 12px; }
   .empty-state { padding: 24px; }
@@ -380,13 +431,12 @@ select.input {
 /* ── Responsive — Mobile (640px) ─────────────────────────── */
 @media (max-width: 640px) {
   /* Layout */
-  .container { padding: 8px; }
   .grid { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
   .grid-2 { gap: 10px; margin-bottom: 12px; }
   .grid-3 { gap: 10px; margin-bottom: 12px; }
 
   /* Cards */
-  .card { padding: 12px; border-radius: 10px; }
+  .card { border-radius: 10px; }
   .card-header { margin-bottom: 8px; }
   .card-title { font-size: 11px; letter-spacing: 0.5px; }
   .card-icon { font-size: 14px; }

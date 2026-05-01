@@ -179,11 +179,16 @@ export default function Overview() {
         backdropFilter: 'blur(20px)',
         border: '1px solid var(--border-glow)',
         borderRadius: 16,
-        padding: '24px 30px',
-        marginBottom: 20,
+        padding: 'var(--card-py) var(--card-px)',
+        marginBottom: 'var(--spacing-lg)',
         boxShadow: 'var(--shadow)',
         position: 'relative',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 'var(--spacing-lg)',
+        alignItems: 'center',
+        justifyContent: 'space-between'
       }}>
         {/* Decorative Grid Background */}
         <div style={{ position: 'absolute', inset: 0, opacity: 0.1, backgroundImage: 'linear-gradient(var(--text-muted) 1px, transparent 1px), linear-gradient(90deg, var(--text-muted) 1px, transparent 1px)', backgroundSize: '20px 20px', pointerEvents: 'none' }} />
@@ -195,38 +200,40 @@ export default function Overview() {
             background: 'rgba(139, 92, 246, 0.1)', 
             borderRadius: 16, 
             border: '1px solid rgba(139, 92, 246, 0.3)',
-            boxShadow: '0 0 24px rgba(139, 92, 246, 0.15)'
+            boxShadow: '0 0 24px rgba(139, 92, 246, 0.15)',
+            flexShrink: 0
           }}>
             <Target size={32} style={{ color: 'var(--accent)', filter: 'drop-shadow(0 0 8px rgba(167, 139, 250, 0.4))' }} />
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h1 style={{ 
-              fontSize: 32, 
+              fontSize: 'clamp(20px, 4vw, 32px)', 
               fontWeight: 900, 
               margin: 0, 
               letterSpacing: '-1px', 
               background: 'var(--header-text-gradient)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
-              textShadow: 'var(--header-text-shadow)' 
+              textShadow: 'var(--header-text-shadow)',
+              lineHeight: 1.1
             }}>
               ATLAS INTELLIGENCE COMMAND
             </h1>
-            <div style={{ fontSize: 13, color: '#a78bfa', fontWeight: 700, letterSpacing: 3, textTransform: 'uppercase', fontFamily: 'var(--mono)', marginTop: 6, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span className="live-dot" style={{ width: 8, height: 8, background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 12px var(--success)', animation: 'pulse-dot 2s infinite' }} />
+            <div style={{ fontSize: 'clamp(10px, 2vw, 13px)', color: '#a78bfa', fontWeight: 700, letterSpacing: 'clamp(1px, 0.5vw, 3px)', textTransform: 'uppercase', fontFamily: 'var(--mono)', marginTop: 6, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span className="live-dot" style={{ width: 8, height: 8, background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 12px var(--success)', animation: 'pulse-dot 2s infinite', flexShrink: 0 }} />
               System Online & Processing
             </div>
           </div>
         </div>
 
         {/* System Controls */}
-        <div style={{ position: 'absolute', right: 30, top: '50%', transform: 'translateY(-50%)', zIndex: 2, display: 'flex', gap: 12 }}>
+        <div style={{ position: 'relative', zIndex: 2, display: 'flex', gap: 12, flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end', minWidth: 'min(100%, 300px)' }}>
           <select 
             className="btn" 
             style={{ 
               appearance: 'none', background: 'rgba(255,255,255,0.05)', color: 'white', 
               border: '1px solid var(--border)', textAlign: 'center', cursor: 'pointer',
-              fontWeight: 600, padding: '8px 16px', borderRadius: 8
+              fontWeight: 600, padding: '8px 16px', borderRadius: 8, flex: '1 1 auto'
             }} 
             value={crawlPace} 
             onChange={changePace}
@@ -239,11 +246,11 @@ export default function Overview() {
           <button 
             onClick={toggleMediaPause}
             style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '8px 16px',
               borderRadius: 8, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border)',
               background: isMediaPaused ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.05)',
               color: isMediaPaused ? 'var(--primary)' : 'white',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s', flex: '1 1 auto', whiteSpace: 'nowrap'
             }}
           >
             {isMediaPaused ? <RefreshCw size={14} /> : <Camera size={14} />}
@@ -253,11 +260,11 @@ export default function Overview() {
           <button 
             onClick={toggleGlobalPause}
             style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '8px 16px',
               borderRadius: 8, fontWeight: 600, cursor: 'pointer', border: 'none',
               background: isGlobalPaused ? 'var(--primary)' : 'var(--warning)',
               color: 'white', boxShadow: `0 0 12px ${isGlobalPaused ? 'rgba(59, 130, 246, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`,
-              transition: 'all 0.2s'
+              transition: 'all 0.2s', flex: '1 1 auto', whiteSpace: 'nowrap'
             }}
           >
             {isGlobalPaused ? <RefreshCw size={14} /> : <XCircle size={14} />}
@@ -267,7 +274,7 @@ export default function Overview() {
       </div>
 
       {/* ── System Activity (Live Crawler & Enrichment) ────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: 20, marginBottom: 24, alignItems: 'stretch' }}>
+      <div className="fluid-grid-large">
         {(crawlActivity.status !== 'idle' || crawlActivity.recentActions.length > 0) ? (
           <CrawlActivity />
         ) : (
@@ -294,7 +301,7 @@ export default function Overview() {
       </div>
 
       {/* ── Charts ────── */}
-      <div className="grid-2" style={{ marginTop: 8 }}>
+      <div className="fluid-grid">
         <div className="card">
           <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 16 }}>
             <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
@@ -455,7 +462,7 @@ export default function Overview() {
       <ChainsPanel onSelectGym={setSelectedGym} />
 
       {/* ── Latest Gyms + Jobs ────── */}
-      <div className="grid-2" style={{ marginTop: 8 }}>
+      <div className="fluid-grid">
         <div className="card">
           <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 12 }}>
             <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>

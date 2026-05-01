@@ -20,8 +20,8 @@ export default function TabNav({ badges = {} }) {
           to={to}
           className={({ isActive }) => `tab-btn${isActive ? ' active' : ''}`}
         >
-          <Icon size={15} />
-          {label}
+          <Icon size={18} className="tab-icon" />
+          <span className="tab-label">{label}</span>
           {badgeId && badges[badgeId] != null && (
             <span className="tab-badge">{badges[badgeId]}</span>
           )}
@@ -44,7 +44,7 @@ export default function TabNav({ badges = {} }) {
           color: var(--text-muted); cursor: pointer; border: none; background: none;
           border-bottom: 2px solid transparent; transition: all 0.2s;
           display: flex; align-items: center; gap: 6px; white-space: nowrap;
-          text-decoration: none;
+          text-decoration: none; position: relative;
         }
         .tab-btn:hover { color: var(--text-secondary); text-decoration: none; }
         .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
@@ -53,13 +53,45 @@ export default function TabNav({ badges = {} }) {
           background: rgba(59, 130, 246, 0.15); color: var(--accent);
           font-family: var(--mono);
         }
-        @media (max-width: 640px) {
-          .tab-nav { padding: 0 8px; top: 45px; }
-          .tab-btn { padding: 10px 12px; font-size: 11px; gap: 4px; }
-          .tab-badge { font-size: 9px; padding: 0 4px; }
+        @media (max-width: 768px) {
+          .tab-nav { padding: 0 12px; }
+          .tab-btn { padding: 12px 14px; font-size: 12px; }
         }
-        @media (max-width: 380px) {
-          .tab-btn { padding: 8px 8px; font-size: 10px; }
+        @media (max-width: 640px) {
+          .tab-nav { 
+            position: fixed; 
+            top: auto; 
+            bottom: 0; 
+            left: 0; 
+            right: 0; 
+            padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); 
+            border-top: 1px solid var(--border); 
+            border-bottom: none; 
+            justify-content: flex-start; 
+            background: var(--bg-header);
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+            overflow-x: auto;
+            flex-wrap: nowrap;
+          }
+          .tab-btn { 
+            flex-direction: column; 
+            padding: 6px 4px; 
+            font-size: 9px; 
+            gap: 4px; 
+            border-bottom: none; 
+            border-radius: 8px;
+            flex: 0 0 72px; 
+            text-align: center;
+            justify-content: center;
+          }
+          .tab-btn.active { 
+            border-bottom-color: transparent; 
+            color: var(--accent); 
+            background: rgba(139, 92, 246, 0.08);
+          }
+          .tab-icon { width: 20px; height: 20px; }
+          .tab-label { font-size: 9px; font-weight: 700; }
+          .tab-badge { position: absolute; top: 4px; right: 10%; font-size: 8px; padding: 0 4px; }
         }
       `}</style>
     </nav>
