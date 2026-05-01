@@ -2,26 +2,47 @@
 const mongoose = require('mongoose');
 
 const PhotoSchema = new mongoose.Schema({
-  gymId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Gym', required: true },
-  originalUrl:   String,
-  localPath:     String,
-  publicUrl:     String,
-  thumbnailUrl:  String,
-  type:          { type: String, enum: ['photo', 'video', 'thumbnail', 'cover'] },
-  caption:       String,
-  width:         Number,
-  height:        Number,
-  sizeBytes:     Number,
-  appealScore:   { type: Number, default: 0 },
-  brightness:    Number,
-  contrast:      Number,
-  tags:          [{ type: String }],
-  isCover:       { type: Boolean, default: false },
-  downloadedAt:  Date,
+  gymId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Gym', index: true }, // optional — filesystem-synced files may lack gymId
+  originalUrl:  String,
+  localPath:    String,
+  publicUrl:    { type: String, sparse: true },
+  thumbnailUrl: String,
+  type:         { type: String, enum: ['photo', 'video', 'thumbnail', 'cover'], default: 'photo', index: true },
+  caption:      String,
+  filename:     String,           // basename of stored file
+  folder:       String,           // relative sub-folder e.g. "photos/gym-slug"
+  width:        Number,
+  height:       Number,
+  sizeBytes:    Number,
+  mimeType:     String,
+  appealScore:  { type: Number, default: 0 },
+  brightness:   Number,
+  contrast:     Number,
+  tags:         [{ type: String, index: true }],
+  isCover:      { type: Boolean, default: false },
+  isOrphaned:   { type: Boolean, default: false }, // file on disk but no gym match
+  downloadedAt: Date,
   downloadError: String,
-}, { timestamps: { createdAt: 'createdAt', updatedAt: false }, collection: 'gym_photos' });
+  // Sync tracking
+  fsVerifiedAt: Date,             // last time file existence was confirmed on disk
+  fsExists:     { type: Boolean, default: true },
+}, {
+  timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
+  collection: 'gym_photos'
+});
 
-PhotoSchema.index({ gymId: 1 });
-PhotoSchema.index({ publicUrl: 1 }, { unique: true });
+// ── Compound indexes for scalable queries ──────────────────────────────────────
+PhotoSchema.index({ publicUrl: 1 }, { unique: true, sparse: true });
+PhotoSchema.index({ gymId: 1, type: 1 });
+PhotoSchema.index({ gymId: 1, createdAt: -1 });
+PhotoSchema.index({ type: 1, createdAt: -1 });
+PhotoSchema.index({ createdAt: -1 });
+PhotoSchema.index({ sizeBytes: -1 });
+PhotoSchema.index({ appealScore: -1 });
+PhotoSchema.index({ folder: 1 });
+PhotoSchema.index({ fsExists: 1 });
+PhotoSchema.index({ tags: 1 });
+// Text search index
+PhotoSchema.index({ caption: 'text', filename: 'text', folder: 'text' });
 
 module.exports = mongoose.model('Photo', PhotoSchema);
