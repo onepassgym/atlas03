@@ -69,7 +69,7 @@ router.get('/suggestions', async (req, res) => {
         { $limit: 4 }
       ]),
       Gym.aggregate([
-        { $match: { chainName: { $regex: contains, $ne: null } } },
+        { $match: { $and: [{ chainName: { $ne: null } }, { chainName: contains }] } },
         { $group: { _id: '$chainName', chainSlug: { $first: '$chainSlug' }, count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 3 }

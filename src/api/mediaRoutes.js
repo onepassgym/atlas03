@@ -192,7 +192,7 @@ router.get('/stats', async (req, res) => {
             { $limit: 5 },
             { $lookup: { from: 'gyms', localField: 'gymId', foreignField: '_id', as: 'gymDoc' } },
             { $unwind: { path: '$gymDoc', preserveNullAndEmptyArrays: true } },
-            { $addFields: { 'gymId': { $ifNull: [{ _id: '$gymDoc._id', name: '$gymDoc.name' }, null] } } },
+            { $addFields: { gymId: { $cond: [{ $gt: ['$gymDoc', null] }, { _id: '$gymDoc._id', name: '$gymDoc.name' }, null] } } },
             { $project: { gymDoc: 0 } }
           ],
           unlinkedCount: [

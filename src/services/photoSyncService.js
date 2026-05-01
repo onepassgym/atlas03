@@ -16,7 +16,6 @@
  *   When lastProcessedGymId reaches the end of collection → reset cursor → new cycle
  */
 
-const path = require('path');
 const mongoose = require('mongoose');
 const Photo = require('../db/photoModel');
 const Gym   = require('../db/gymModel');
@@ -29,35 +28,6 @@ const { buildOp, collectPhotos } = require('./photoMigrationHelpers');
 const GYMS_PER_RUN = 500;   // gyms to process per daily run (tune for your VPS)
 const BATCH_SIZE   = 200;   // photo ops per bulkWrite flush
 const RUN_TAG = `photo-sync-${process.pid}`; // unique tag for this process instance
-
-  // 2 — coverPhoto (merge or add)
-  if (gym.coverPhoto?.publicUrl) {
-    const existing = photoMap.get(gym.coverPhoto.publicUrl);
-    if (existing) {
-      existing.isCover        = true;
-      existing.p.width        = existing.p.width        ?? gym.coverPhoto.width        ?? null;
-      existing.p.height       = existing.p.height       ?? gym.coverPhoto.height       ?? null;
-      existing.p.thumbnailUrl = existing.p.thumbnailUrl ?? gym.coverPhoto.thumbnailUrl ?? null;
-    } else {
-      photoMap.set(gym.coverPhoto.publicUrl, {
-        p: {
-          publicUrl:    gym.coverPhoto.publicUrl,
-          thumbnailUrl: gym.coverPhoto.thumbnailUrl || null,
-          width:        gym.coverPhoto.width        ?? null,
-          height:       gym.coverPhoto.height       ?? null,
-          originalUrl:  null,
-          localPath:    null,
-          type:         'photo',
-          sizeBytes:    null,
-          downloadedAt: null,
-        },
-        isCover: true,
-      });
-    }
-  }
-
-  return photoMap;
-}
 
 // ── Core sync runner ──────────────────────────────────────────────────────────
 
