@@ -164,7 +164,7 @@ export default function Overview() {
     } catch { if (toast) toast('Failed to update media state', 'error'); }
   };
 
-  const cityData = (stats?.topCities || []).slice(0, 8).map(c => ({ name: c._id || 'Unknown', count: c.count }));
+  const cityData = (stats?.topCities || []).map(c => ({ name: c._id || 'Unknown', count: c.count }));
   const catData = (stats?.byCategory || []).slice(0, 8).map(c => ({ name: formatCategory(c._id), value: c.count }));
 
   // Throttle health color
@@ -315,68 +315,36 @@ export default function Overview() {
             </span>
           </div>
           {cityData.length > 0 ? (() => {
-            const max = cityData[0]?.count || 1;
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 6px', maxHeight: 280, overflowY: 'auto', paddingRight: 4 }}>
                 {cityData.map((c, i) => {
-                  const pct = Math.round((c.count / max) * 100);
                   const parts = c.name.split(',').map(p => p.trim());
                   const city    = parts[0] || c.name;
-                  const country = parts[parts.length - 1] || '';
                   const color   = CHART_COLORS[i % CHART_COLORS.length];
                   return (
                     <motion.div 
                       key={c.name} 
-                      whileHover={{ scale: 1.01, backgroundColor: 'var(--row-hover)' }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px', borderRadius: 8, transition: 'background-color 0.2s', cursor: 'default' }}
+                      whileHover={{ scale: 1.05, filter: 'brightness(1.1)' }}
+                      style={{ 
+                        display: 'flex', alignItems: 'center', gap: 6, 
+                        padding: '4px 10px', borderRadius: 16, 
+                        background: `linear-gradient(135deg, ${color}15, transparent)`, 
+                        border: `1px solid ${color}33`,
+                        cursor: 'default',
+                        boxShadow: `0 2px 8px ${color}11`
+                      }}
                     >
-                      {/* Rank badge */}
-                      <div style={{
-                        width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                        background: `linear-gradient(135deg, ${color}22, ${color}11)`, 
-                        border: `1px solid ${color}44`, color, fontWeight: 900,
-                        fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: `0 0 10px ${color}22`
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {city}
+                      </span>
+                      <span style={{
+                        fontSize: 11, fontWeight: 800, fontFamily: 'var(--mono)',
+                        color: 'var(--text-primary)', background: 'var(--bg-surface)', 
+                        padding: '2px 6px', borderRadius: 10,
+                        border: '1px solid var(--border)'
                       }}>
-                        {i + 1}
-                      </div>
-                      {/* Name + bar */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                          <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                              {city}
-                            </span>
-                            {country && city !== country && (
-                              <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-surface)', padding: '2px 6px', borderRadius: 4 }}>
-                                {country}
-                              </span>
-                            )}
-                          </div>
-                          <span style={{
-                            fontSize: 13, fontWeight: 800, fontFamily: 'var(--mono)',
-                            color: 'var(--text-primary)', flexShrink: 0, marginLeft: 8,
-                          }}>
-                            {c.count.toLocaleString()}
-                          </span>
-                        </div>
-                        {/* Animated fill bar */}
-                        <div style={{ height: 6, background: 'var(--bg-surface)', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${pct}%` }}
-                            transition={{ duration: 0.8, delay: i * 0.1, ease: [0.25, 1, 0.5, 1] }}
-                            style={{
-                              height: '100%', borderRadius: 4,
-                              background: `linear-gradient(90deg, ${color}, ${color}dd)`,
-                              boxShadow: `0 0 8px ${color}88`,
-                              position: 'relative'
-                            }}
-                          >
-                            <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 20, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5))', opacity: 0.5 }} />
-                          </motion.div>
-                        </div>
-                      </div>
+                        {c.count.toLocaleString()}
+                      </span>
                     </motion.div>
                   );
                 })}

@@ -244,83 +244,143 @@ router.post('/migrate-from-gyms', async (req, res) => {
       const slugMap  = new Map(gymSlugs.map(g => [g.slug, g._id]));
       logger.info(`[media-migrate] Loaded ${slugMap.size} gym slugs`);
 
-      // Count total gyms with photos for progress %
-      const gymTotal = await Gym.countDocuments({ rawPhotos: { $exists: true, $ne: [] } });
+      // Fetch every gym that has coverPhoto.publicUrl OR a non-empty rawPhotos array
+      const gyms = await Gym.find({
+        $or: [
+          { 'coverPhoto.publicUrl': { $exists: true, $ne: null } },
+          { rawPhotos: { $exists: true, $type: 'array', $ne: [] } },
+        ],
+      }).select('_id slug coverPhoto rawPhotos').lean();
+      logger.info(`[media-migrate] Found ${gyms.length} gyms with media`);
 
+      let processed = 0, upserted = 0, skipped = 0;
       const BATCH = 200;
-      const gyms = await Gym.find({ rawPhotos: { $exists: true, $ne: [] } })
-        .select('_id slug rawPhotos')
-        .lean();
-
-      let processed = 0, upserted = 0;
       let ops = [];
 
+      // Build one bulkWrite op from a normalised photo descriptor
+      function buildOp(gymId, gymSlug, p, isCover) {
+        let folder = `photos/${gymSlug}`;
+        if (p.localPath) {
+          try {
+            folder = path.dirname(
+              path.relative(path.resolve(cfg.media.basePath), p.localPath)
+            ).replace(/\\/g, '/');
+          } catch (_) { /* keep default */ }
+        }
+        const filename = p.localPath
+          ? path.basename(p.localPath)
+          : path.basename((p.publicUrl || 'photo.jpg').split('?')[0]);
+
+        return {
+          updateOne: {
+            filter: { publicUrl: p.publicUrl },
+            update: {
+              $setOnInsert: {
+                gymId,
+                originalUrl:  p.originalUrl  || null,
+                localPath:    p.localPath    || null,
+                publicUrl:    p.publicUrl,
+                thumbnailUrl: p.thumbnailUrl || null,
+                filename,
+                folder,
+                type:         p.type         || 'photo',
+                width:        p.width        ?? null,
+                height:       p.height       ?? null,
+                sizeBytes:    p.sizeBytes    ?? null,
+                mimeType:     p.mimeType     || null,
+                appealScore:  p.appealScore  || 0,
+                brightness:   p.brightness   || null,
+                contrast:     p.contrast     || null,
+                tags:         Array.isArray(p.tags) ? p.tags : [],
+                isCover:      Boolean(isCover),
+                downloadedAt: p.downloadedAt ? new Date(p.downloadedAt) : null,
+                fsExists:     true,
+                createdAt:    p.downloadedAt ? new Date(p.downloadedAt) : new Date(),
+              },
+              $set: { gymId, ...(isCover ? { isCover: true } : {}) },
+            },
+            upsert: true,
+          },
+        };
+      }
+
+      async function flushBatch() {
+        if (!ops.length) return;
+        try {
+          const result = await Photo.bulkWrite(ops, { ordered: false });
+          upserted += result.upsertedCount + result.modifiedCount;
+        } catch (bwe) {
+          upserted += bwe.result?.result?.nUpserted || 0;
+          logger.warn(`[media-migrate] bulkWrite partial (${bwe.code}): ${String(bwe.message).slice(0, 150)}`);
+        }
+        ops = [];
+      }
+
       for (const gym of gyms) {
-        if (!Array.isArray(gym.rawPhotos) || !gym.rawPhotos.length) {
-          logger.info(`[media-migrate] Skipping gym ${gym.slug}: rawPhotos is not a valid array`, gym.rawPhotos);
-          continue;
+        // Deduplicate per gym by publicUrl; rawPhotos is the primary source
+        const photoMap = new Map(); // publicUrl → { p, isCover }
+
+        // 1 — rawPhotos: has localPath, sizeBytes, downloadedAt, originalUrl
+        if (Array.isArray(gym.rawPhotos)) {
+          for (const p of gym.rawPhotos) {
+            if (!p || typeof p !== 'object' || !p.publicUrl) { skipped++; continue; }
+            photoMap.set(p.publicUrl, { p, isCover: false });
+          }
         }
 
-        for (const p of gym.rawPhotos) {
-          if (!p?.publicUrl) {
-            logger.info(`[media-migrate] Skipping photo in gym ${gym.slug}: no publicUrl`);
-            continue;
-          }
-          const folder = p.localPath
-            ? path.dirname(path.relative(path.resolve(cfg.media.basePath), p.localPath)).replace(/\\/g, '/')
-            : `photos/${gym.slug}`;
-
-          ops.push({
-            updateOne: {
-              filter: { publicUrl: p.publicUrl },
-              update: {
-                $setOnInsert: {
-                  gymId:        gym._id,
-                  originalUrl:  p.originalUrl  || null,
-                  localPath:    p.localPath    || null,
-                  publicUrl:    p.publicUrl,
-                  thumbnailUrl: p.thumbnailUrl || null,
-                  filename:     p.localPath ? path.basename(p.localPath) : path.basename(p.publicUrl),
-                  folder,
-                  type:         p.type         || 'photo',
-                  width:        p.width        || null,
-                  height:       p.height       || null,
-                  sizeBytes:    p.sizeBytes    || null,
-                  appealScore:  p.appealScore  || 0,
-                  brightness:   p.brightness   || null,
-                  contrast:     p.contrast     || null,
-                  tags:         p.tags         || [],
-                  downloadedAt: p.downloadedAt || null,
-                  fsExists:     true,
-                  createdAt:    p.downloadedAt || new Date(),
-                },
-                $set: { gymId: gym._id },
+        // 2 — coverPhoto: merge into existing entry or add as standalone record
+        //     Fields: publicUrl, thumbnailUrl, width, height
+        if (gym.coverPhoto?.publicUrl) {
+          const existing = photoMap.get(gym.coverPhoto.publicUrl);
+          if (existing) {
+            // Same file as a rawPhoto — mark cover + fill any missing dimensions
+            existing.isCover        = true;
+            existing.p.width        = existing.p.width        ?? gym.coverPhoto.width        ?? null;
+            existing.p.height       = existing.p.height       ?? gym.coverPhoto.height       ?? null;
+            existing.p.thumbnailUrl = existing.p.thumbnailUrl ?? gym.coverPhoto.thumbnailUrl ?? null;
+          } else {
+            // coverPhoto not present in rawPhotos — create standalone entry
+            photoMap.set(gym.coverPhoto.publicUrl, {
+              p: {
+                publicUrl:    gym.coverPhoto.publicUrl,
+                thumbnailUrl: gym.coverPhoto.thumbnailUrl || null,
+                width:        gym.coverPhoto.width        ?? null,
+                height:       gym.coverPhoto.height       ?? null,
+                originalUrl:  null,
+                localPath:    null,
+                type:         'photo',
+                sizeBytes:    null,
+                downloadedAt: null,
               },
-              upsert: true,
-            }
-          });
+              isCover: true,
+            });
+          }
+        }
 
+        if (photoMap.size === 0) { skipped++; continue; }
+
+        for (const { p, isCover } of photoMap.values()) {
+          ops.push(buildOp(gym._id, gym.slug, p, isCover));
           if (ops.length >= BATCH) {
-            await Photo.bulkWrite(ops, { ordered: false });
-            upserted += ops.length;
-            ops = [];
-            if (upserted % 2000 === 0) logger.info(`[media-migrate] Migrated ${upserted} photos so far...`);
+            await flushBatch();
+            if (upserted % 2000 === 0 && upserted > 0)
+              logger.info(`[media-migrate] Migrated ${upserted} photos so far...`);
           }
         }
         processed++;
       }
 
-      if (ops.length) {
-        await Photo.bulkWrite(ops, { ordered: false });
-        upserted += ops.length;
-      }
+      // Flush remainder
+      await flushBatch();
 
       const finalCount = await Photo.countDocuments();
+      setProgress('migrate', { status: 'done', phase: 'Migration complete', processed, upserted, skipped, finalCount });
       setTimeout(() => clearProgress('migrate'), 60_000);
-      logger.info(`[media-migrate] ✅ Done: ${processed} gyms processed, ${upserted} photo ops, ${finalCount} total in gym_photos`);
+      logger.info(`[media-migrate] ✅ Done: ${processed} gyms, ${upserted} upserted, ${skipped} skipped, ${finalCount} total in gym_photos`);
     } catch (e) {
+      setProgress('migrate', { status: 'error', phase: String(e.message || e) });
       setTimeout(() => clearProgress('migrate'), 30_000);
-      logger.error('[media-migrate] Error:', e.message);
+      logger.error(`[media-migrate] Error: ${e.stack || e}`);
     }
   })();
 });
@@ -333,7 +393,9 @@ router.post('/sync', async (req, res) => {
   (async () => {
     try {
       const basePath = path.resolve(cfg.media.basePath);
-      const baseUrl  = cfg.media.baseUrl.replace(/\/$/, '');
+      // Guard: baseUrl may be undefined if env var is missing
+      const rawBaseUrl = cfg.media.baseUrl || `http://localhost:${process.env.PORT || '8747'}/media`;
+      const baseUrl  = rawBaseUrl.replace(/\/$/, '');
 
       let accessible = true;
       try { await fsp.access(basePath); } catch { accessible = false; }
@@ -356,7 +418,7 @@ router.post('/sync', async (req, res) => {
       setProgress('sync', { status: 'running', phase: 'Upserting to database…', done: 0, total: mediaFiles.length });
 
       const BATCH = 200;
-      let upserted = 0;
+      let upserted = 0, errors = 0;
 
       for (let i = 0; i < mediaFiles.length; i += BATCH) {
         const chunk = mediaFiles.slice(i, i + BATCH);
@@ -366,7 +428,6 @@ router.post('/sync', async (req, res) => {
           const pubUrl   = `${baseUrl}/${rel}`;
           const folder   = path.dirname(rel).replace(/\\/g, '/');
           const isThumb  = rel.startsWith('thumbnails/') || f.name.startsWith('th_');
-          // Infer gymId: files are stored in photos/{slug}/filename.jpg
           const parts    = rel.split('/');
           const slug     = (!isThumb && parts.length >= 2) ? parts[1] : null;
           const gymId    = slug ? (slugMap.get(slug) || null) : null;
@@ -387,38 +448,52 @@ router.post('/sync', async (req, res) => {
                   createdAt:    new Date(f.mtimeMs),
                   ...(gymId ? { gymId } : {}),
                 },
-                $set: { fsExists: true, fsVerifiedAt: new Date(), ...(gymId ? { gymId } : {}) }
+                $set: { fsExists: true, fsVerifiedAt: new Date(), ...(gymId ? { gymId } : {}) },
               },
               upsert: true,
-            }
+            },
           };
         });
 
-        await Photo.bulkWrite(ops, { ordered: false });
-        upserted += chunk.length;
+        try {
+          await Photo.bulkWrite(ops, { ordered: false });
+          upserted += chunk.length;
+        } catch (bwe) {
+          // E11000 / partial failure — count what succeeded
+          const ok = bwe.result?.result?.nUpserted || 0;
+          upserted += ok;
+          errors++;
+          logger.warn(`[media-sync] bulkWrite chunk error (${bwe.code}): ${String(bwe.message).slice(0, 120)}`);
+        }
+
         setProgress('sync', { status: 'running', phase: 'Upserting to database…', done: upserted, total: mediaFiles.length });
-        if (upserted % 2000 === 0) logger.info(`[media-sync] Upserted ${upserted}/${mediaFiles.length}`);
+        if (upserted % 2000 === 0 && upserted > 0)
+          logger.info(`[media-sync] Upserted ${upserted}/${mediaFiles.length}`);
       }
 
       // Mark DB records whose local files no longer exist on disk
       setProgress('sync', { status: 'running', phase: 'Checking for missing files…', done: upserted, total: mediaFiles.length });
-      const allDbPhotos = await Photo.find({ localPath: { $ne: null } }).select('localPath').lean();
+      const allDbPhotos = await Photo.find({ localPath: { $ne: null } }).select('_id localPath').lean();
       const missingIds  = [];
-      for (const p of allDbPhotos) {
-        try { await fsp.access(p.localPath); } catch { missingIds.push(p._id); }
+      const MISS_BATCH  = 500;
+      for (let i = 0; i < allDbPhotos.length; i += MISS_BATCH) {
+        await Promise.all(allDbPhotos.slice(i, i + MISS_BATCH).map(async p => {
+          try { await fsp.access(p.localPath); }
+          catch { missingIds.push(p._id); }
+        }));
       }
       if (missingIds.length > 0) {
         await Photo.updateMany({ _id: { $in: missingIds } }, { $set: { fsExists: false } });
       }
 
       const finalCount = await Photo.countDocuments();
-      setProgress('sync', { status: 'done', phase: 'Sync complete', done: upserted, total: mediaFiles.length, missing: missingIds.length, finalCount });
+      setProgress('sync', { status: 'done', phase: 'Sync complete', done: upserted, total: mediaFiles.length, missing: missingIds.length, chunkErrors: errors, finalCount });
       setTimeout(() => clearProgress('sync'), 60_000);
-      logger.info(`[media-sync] ✅ Sync complete: ${upserted} files processed, ${missingIds.length} marked missing, ${finalCount} total DB records`);
+      logger.info(`[media-sync] ✅ Sync complete: ${upserted} upserted, ${missingIds.length} missing, ${errors} chunk errors, ${finalCount} total`);
     } catch (e) {
-      setProgress('sync', { status: 'error', phase: e.message, done: 0, total: 0 });
+      setProgress('sync', { status: 'error', phase: String(e.message || e), done: 0, total: 0 });
       setTimeout(() => clearProgress('sync'), 30_000);
-      logger.error('[media-sync] Sync error:', e.message);
+      logger.error(`[media-sync] Sync error: ${e.stack || e}`);
     }
   })();
 });
@@ -519,18 +594,19 @@ router.delete('/:id', param('id').isMongoId(), async (req, res) => {
   } catch (e) { err(res, e.message); }
 });
 
-// ── Filesystem walker ─────────────────────────────────────────────────────────
+// ── Filesystem walker (concurrency-limited to avoid EMFILE on Linux VPS) ───────
 async function walkDir(dirPath) {
   const results = [];
+
   async function walk(current) {
     let entries;
     try { entries = await fsp.readdir(current, { withFileTypes: true }); }
     catch { return; }
 
-    await Promise.all(entries.map(async entry => {
-      if (entry.name.startsWith('.')) return;
+    // Process entries sequentially within each directory to cap open-file handles
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
       const full = path.join(current, entry.name);
-      
       try {
         const stat = await fsp.stat(full);
         if (stat.isDirectory()) {
@@ -543,9 +619,10 @@ async function walkDir(dirPath) {
             mtimeMs: stat.mtimeMs,
           });
         }
-      } catch { /* skip unreadable */ }
-    }));
+      } catch { /* skip unreadable / permission denied */ }
+    }
   }
+
   await walk(dirPath);
   return results;
 }
