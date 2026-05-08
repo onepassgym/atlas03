@@ -41,6 +41,18 @@ const ContactSchema = new mongoose.Schema({
 // ── Main Schema ───────────────────────────────────────────────────────────────
 
 const GymSchema = new mongoose.Schema({
+  // Public canonical identifier — OPG-KEYWORD-XXXX
+  // Never regenerated after first assignment. Never used in $lookup/$match.
+  opgId: {
+    type:      String,
+    unique:    true,
+    sparse:    true,
+    index:     true,
+    uppercase: true,
+    trim:      true,
+    match:     /^OPG-[A-Z]+-[A-Z2-9]{4}$/,
+  },
+
   // Identity
   placeId:       { type: String, sparse: true },
   googleMapsUrl: String,
@@ -205,7 +217,14 @@ const GymSchema = new mongoose.Schema({
   timestamps: true, 
   collection: 'gyms',
   autoIndex: false,
-  toJSON: { virtuals: true },
+  toJSON: {
+    virtuals: true,
+    transform: (doc, ret) => {
+      delete ret._id;
+      delete ret.__v;
+      return ret;
+    }
+  },
   toObject: { virtuals: true }
 });
 
@@ -232,6 +251,7 @@ GymSchema.virtual('crawlMeta', {
 
 // ── Indexes (declared once, no duplicates) ────────────────────────────────────
 
+GymSchema.index({ opgId:       1 },         { unique: true, sparse: true }); // public canonical id
 GymSchema.index({ geoLocation: '2dsphere' });                              // legacy
 GymSchema.index({ location:    '2dsphere' }, { sparse: true });            // canonical
 GymSchema.index({ slug:        1 },         { unique: true, sparse: true });

@@ -7,6 +7,8 @@ const Gym       = require('../db/gymModel');
 const Photo     = require('../db/photoModel');
 
 const { ok, err, validate } = require('../utils/apiUtils');
+const { isValidOpgId } = require('../utils/opgId');
+
 
 // ── In-memory stats cache (TTL-based) ─────────────────────────────────────────
 let _gymStatsCache = null;
@@ -529,34 +531,62 @@ router.get('/photos', async (req, res) => {
   } catch (e) { err(res, e.message); }
 });
 
-// GET /api/gyms/:id
-router.get('/:id', param('id').isMongoId(), async (req, res) => {
-  if (validate(req, res)) return;
+/**
+ * resolveGym — shared middleware for /:opgId routes.
+ * Validates format, fetches the gym, attaches as req.gym.
+ * All subsequent DB queries use req.gym._id (ObjectId) only.
+ */
+async function resolveGym(req, res, next) {
+  const { opgId } = req.params;
+  if (!isValidOpgId(opgId)) return err(res, 'Invalid OPG ID format — expected OPG-KEYWORD-XXXX', 400);
   try {
-    const gym = await Gym.findById(req.params.id)
-      .populate('categoryId', 'slug label description')
-      .populate('amenityIds', 'slug label icon')
-      .populate('reviews')
-      .populate('photos', '-localPath')
-      .populate('crawlMeta')
-      .lean({ virtuals: true });
-    
+    const gym = await Gym.findOne({ opgId }).lean({ virtuals: true });
     if (!gym) return err(res, 'Gym not found', 404);
-    ok(res, { gym });
+    req.gym = gym;
+    next();
   } catch (e) { err(res, e.message); }
-});
+}
 
-// PATCH /api/gyms/:id  — update platform fields only
-router.patch('/:id', param('id').isMongoId(), async (req, res) => {
-  if (validate(req, res)) return;
-  const allowed = ['atlas06'];
-  const set = {};
-  for (const k of allowed) if (req.body[k]) set[k] = req.body[k];
-  try {
-    const gym = await Gym.findByIdAndUpdate(req.params.id, { $set: set }, { new: true });
-    if (!gym) return err(res, 'Gym not found', 404);
-    ok(res, { gym });
-  } catch (e) { err(res, e.message); }
-});
+// GET /api/gyms/:opgId
+router.get('/:opgId',
+  param('opgId')
+    .matches(/^OPG-[A-Z]+-[A-Z2-9]{4}$/)
+    .withMessage('Invalid OPG ID — expected OPG-KEYWORD-XXXX'),
+  resolveGym,
+  async (req, res) => {
+    if (validate(req, res)) return;
+    try {
+      const gym = await Gym.findById(req.gym._id)
+        .populate('categoryId', 'slug label description')
+        .populate('amenityIds', 'slug label icon')
+        .populate('reviews')
+        .populate('photos', '-localPath')
+        .populate('crawlMeta')
+        .lean({ virtuals: true });
+
+      if (!gym) return err(res, 'Gym not found', 404);
+      ok(res, { gym });
+    } catch (e) { err(res, e.message); }
+  }
+);
+
+// PATCH /api/gyms/:opgId  — update platform fields only
+router.patch('/:opgId',
+  param('opgId')
+    .matches(/^OPG-[A-Z]+-[A-Z2-9]{4}$/)
+    .withMessage('Invalid OPG ID — expected OPG-KEYWORD-XXXX'),
+  resolveGym,
+  async (req, res) => {
+    if (validate(req, res)) return;
+    const allowed = ['atlas06'];
+    const set = {};
+    for (const k of allowed) if (req.body[k]) set[k] = req.body[k];
+    try {
+      const gym = await Gym.findByIdAndUpdate(req.gym._id, { $set: set }, { new: true });
+      if (!gym) return err(res, 'Gym not found', 404);
+      ok(res, { gym });
+    } catch (e) { err(res, e.message); }
+  }
+);
 
 module.exports = router;

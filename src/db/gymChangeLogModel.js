@@ -6,6 +6,9 @@ const mongoose = require('mongoose');
 const GymChangeLogSchema = new mongoose.Schema(
   {
     gymId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Gym', required: true },
+    // Denormalized public identifier — populated at write time from parent gym.
+    // Never used for $lookup or joins; gymId (ObjectId) is always the join key.
+    opgId:    { type: String, index: true, uppercase: true, trim: true },
     field:    { type: String, required: true },
     oldValue: mongoose.Schema.Types.Mixed,
     newValue: mongoose.Schema.Types.Mixed,

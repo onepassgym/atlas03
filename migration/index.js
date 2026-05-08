@@ -66,6 +66,13 @@ async function runMigration() {
   console.log(`Summary: { totalProcessed: ${totalProcessed}, succeeded: ${succeeded}, failed: ${failed}, duration: ${durationStr} }`);
 }
 
+// ── Migration dispatch ──────────────────────────────────────────────────────
+// Usage: node migration/index.js --run=addOpgIds
+const arg = process.argv.find(a => a.startsWith('--run='));
+if (arg === '--run=addOpgIds') {
+  require('./addOpgIds');
+} else {
+
 // Ensure the process stays alive and cron runs daily at 12:01 AM
 if (require.main === module) {
   // Check if run directly with runNow() equivalent e.g., node -e "require('./migration/index.js').runNow()"
@@ -84,3 +91,5 @@ module.exports = {
     await disconnectDB();
   }
 };
+
+} // end --run dispatch guard

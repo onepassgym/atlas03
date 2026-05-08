@@ -35,6 +35,9 @@ const CrawlJobSchema = new mongoose.Schema({
   durationMs:  Number,
 
   gymIds:     [{ type: mongoose.Schema.Types.ObjectId, ref: 'Gym' }],
+  // Denormalized public identifier — set when job processes a single gym target.
+  // Never used for $lookup or joins; gymIds (ObjectId array) is always the join key.
+  opgId:      { type: String, index: true, uppercase: true, trim: true },
   jobErrors:  [{ message: String, url: String, at: Date }],  // renamed from 'errors' (reserved)
   errorCount: { type: Number, default: 0 },
 

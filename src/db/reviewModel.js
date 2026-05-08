@@ -38,6 +38,9 @@ function parseRelativeDate(raw) {
 const ReviewSchema = new mongoose.Schema(
   {
     gymId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Gym', required: true },
+    // Denormalized public identifier — populated at write time from parent gym.
+    // Never used for $lookup or joins; gymId (ObjectId) is always the join key.
+    opgId:        { type: String, index: true, uppercase: true, trim: true },
     reviewId:     { type: String, required: true },
 
     authorName:   String,

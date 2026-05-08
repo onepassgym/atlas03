@@ -104,6 +104,27 @@ async function ensureIndexes() {
     { name: 'gyms_areaName_enrichmentStatus' }
   );
 
+  // ── opgId indexes (Task 3) ────────────────────────────────────────────────
+  // gyms: unique+sparse allows safe backfill without blocking existing docs
+  await db.collection('gyms').createIndex(
+    { opgId: 1 }, { unique: true, sparse: true, name: 'opgId_unique' }
+  );
+  await db.collection('gym_reviews').createIndex(
+    { opgId: 1 }, { name: 'opgId_idx' }
+  );
+  await db.collection('gym_photos').createIndex(
+    { opgId: 1 }, { name: 'opgId_idx' }
+  );
+  await db.collection('gym_crawl_meta').createIndex(
+    { opgId: 1 }, { name: 'opgId_idx' }
+  );
+  await db.collection('gymChangeLogs').createIndex(
+    { opgId: 1 }, { name: 'opgId_idx' }
+  );
+  await db.collection('gym_crawl_jobs').createIndex(
+    { opgId: 1 }, { name: 'opgId_idx' }
+  );
+
   logger.info('✅ DB indexes verified/created (all collections)');
 }
 

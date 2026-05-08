@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 
 const PhotoSchema = new mongoose.Schema({
   gymId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Gym', index: true },
+  // Denormalized public identifier — populated at write time from parent gym.
+  // Never used for $lookup or joins; gymId (ObjectId) is always the join key.
+  opgId:        { type: String, index: true, uppercase: true, trim: true },
   originalUrl:  String,
   localPath:    String,
   publicUrl:    { type: String, sparse: true },

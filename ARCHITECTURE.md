@@ -287,6 +287,8 @@ name, address, contact.phone, contact.email, contact.website
 | `logger.js` | Winston logger instance | Console + daily rotating file (`app-*.log`, `error-*.log`) |
 | `apiUtils.js` | `ok()`, `err()`, `validate()` | Standardized API responses + express-validator guard |
 | `dedup.js` | `findDuplicate()`, `mergeGymData()` (deprecated), `jaccardSim()` | Legacy dedup helpers (mostly superseded by `upsertGym.js`) |
+| `opgId.js` | `generateOpgId()`, `generateUniqueOpgId()`, `isValidOpgId()` | OPG-KEYWORD-XXXX public ID generation, uniqueness guard, format validator |
+
 
 ### Configuration
 
@@ -327,8 +329,9 @@ name, address, contact.phone, contact.email, contact.website
 | `GET` | `/nearby` | None | Geospatial search (lat, lng, radiusKm) |
 | `GET` | `/stats` | None | Aggregate stats (total, by category, top cities, avg rating) |
 | `GET` | `/export` | None | Stream all gyms as JSON (cursor-based) |
-| `GET` | `/:id` | None | Full gym detail with populated reviews/photos/crawlMeta |
-| `PATCH` | `/:id` | None | Update `atlas06` platform fields only |
+| `GET` | `/:opgId` | None | Full gym detail by public OPG ID (resolves via `opgId`, queries by `_id`) |
+| `PATCH` | `/:opgId` | None | Update `atlas06` platform fields only (resolves via `opgId`, queries by `_id`) |
+
 
 ### System Routes (`/api/system`)
 
@@ -539,6 +542,7 @@ router.METHOD('/path',
 
 | Date | Author | Changes |
 |------|--------|---------|
+| 2026-05-09 | Antigravity | **opgId rollout** — Tasks 1–6: `src/utils/opgId.js` (generator + validator); `opgId` field added to all 6 schemas (gyms unique/sparse, others plain index); `ensureIndexes.js` extended with 6 new index calls; `migration/addOpgIds.js` idempotent backfill + `npm run migrate:opgid`; `upsertGym.js` INSERT generates unique opgId before `Gym.create()`, UPDATE preserves existing opgId + backfills related docs; `gymRoutes.js` /:id → /:opgId with `resolveGym` middleware + format validator; `toJSON` transform on GymSchema strips `_id`/`__v` from API responses |
 | 2026-05-09 | Antigravity | **Enrichment session** — Tasks 1–7: `MEDIA_DOWNLOAD_ENABLED` env gate; `rawPhotoUrls[]`, `pricing`, `operationalData`, `extraAttributes`, expanded `contact` schema fields; `sourceType`+`downloaded` on gym_photos; `reviewPhotos[]`, `reviewerLocalGuideLevel`, `ownerReply.respondedAtRaw` on reviews; `scrapeEnrichmentDetail()` + `scrapeAboutTabExhaustive()`; `enrichmentProcessor.js`; `gym-enrichment` BullMQ job type + `atlas06-enrichment` queue; `scripts/enrichNCR.js` CLI; 5 new DB indexes |
 | 2026-05-09 | Antigravity | Fix `apiFetch` to throw on non-2xx HTTP; add `gym_crawl_jobs` indexes (TD-08 ✅); move `express.json()` to router-level in systemRoutes; add search retry logic to scraper; update route inventory with `force-complete` + `start-now`; mark TD-05 ✅ TD-07 ✅ TD-08 ✅; add TD-09 for undocumented chain/events routes |
 | 2026-04-18 | Antigravity | Initial architecture document created |

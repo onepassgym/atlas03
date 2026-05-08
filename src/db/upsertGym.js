@@ -29,6 +29,8 @@ const { calculateQualityScore } = require('../services/intelligence/scoring');
 const { analyzeGymSentiment } = require('../services/intelligence/sentiment');
 const logger       = require('../utils/logger');
 const slugify      = require('slugify');
+const { generateUniqueOpgId } = require('../utils/opgId');
+
 
 // ── Fields that we always overwrite with fresh crawl data ─────────────────────
 const SAFE_OVERWRITE_FIELDS = [
@@ -116,7 +118,7 @@ async function resolveAmenities(rawLabels = []) {
 
 // ── Normalized Data Ingestion Helpers ────────────────────────────────────────
 
-async function upsertPhotos(gymId, rawPhotos = [], now) {
+async function upsertPhotos(gymId, rawPhotos = [], now, opgId) {
   if (!rawPhotos.length) return 0;
 
   // Phase 3b: Single bulkWrite instead of N sequential updateOne calls
@@ -128,6 +130,7 @@ async function upsertPhotos(gymId, rawPhotos = [], now) {
         update: {
           $setOnInsert: {
             gymId,
+            ...(opgId ? { opgId } : {}),
             originalUrl:  p.originalUrl,
             localPath:    p.localPath,
             publicUrl:    p.publicUrl,
@@ -152,7 +155,7 @@ async function upsertPhotos(gymId, rawPhotos = [], now) {
   return 0;
 }
 
-async function upsertCrawlMeta(gymId, rawMeta, now) {
+async function upsertCrawlMeta(gymId, rawMeta, now, opgId) {
   if (!rawMeta) return;
   await CrawlMeta.updateOne(
     { gymId },
@@ -166,7 +169,8 @@ async function upsertCrawlMeta(gymId, rawMeta, now) {
         dataCompleteness: rawMeta.dataCompleteness || 0,
         sourceUrl: rawMeta.sourceUrl,
         jobId: rawMeta.jobId,
-        updatedAt: now
+        updatedAt: now,
+        ...(opgId ? { opgId } : {}),
       },
       $setOnInsert: {
         gymId,
@@ -256,11 +260,14 @@ async function findExistingGym(crawledData) {
 }
 
 // ── Insert reviews (separate collection) for a gym ───────────────────────────
-async function insertReviews(gymId, rawReviews = []) {
+async function insertReviews(gymId, rawReviews = [], opgId) {
   if (!rawReviews.length) return 0;
 
   const docs = buildReviewDocs(gymId, rawReviews);
   if (!docs.length) return 0;
+
+  // Stamp opgId onto every doc at insert time if available
+  if (opgId) docs.forEach(d => { d.opgId = opgId; });
 
   try {
     const res = await Review.insertMany(docs, { ordered: false });
@@ -275,7 +282,7 @@ async function insertReviews(gymId, rawReviews = []) {
 }
 
 // ── Merge new reviews into existing gym (dedup by reviewId) ──────────────────
-async function mergeReviews(gymId, rawReviews = []) {
+async function mergeReviews(gymId, rawReviews = [], opgId) {
   if (!rawReviews.length) return 0;
 
   // Fetch ids we already have
@@ -290,6 +297,9 @@ async function mergeReviews(gymId, rawReviews = []) {
   if (!fresh.length) return 0;
 
   const docs = buildReviewDocs(gymId, fresh);
+  // Stamp opgId onto new review docs if available
+  if (opgId) docs.forEach(d => { d.opgId = opgId; });
+
   try {
     const res = await Review.insertMany(docs, { ordered: false });
     return res.length;
@@ -398,21 +408,25 @@ async function upsertGym(crawledData) {
         normalizedData.location = buildLocation(normalizedData.lat, normalizedData.lng);
       }
 
+      // Generate a unique public OPG ID before creating the gym
+      const opgId = await generateUniqueOpgId(Gym);
+      normalizedData.opgId = opgId;
+
       // 1. Create Gym (Raw array values mapped correctly to raw field)
       const gym = await Gym.create(normalizedData);
       const gymId = gym._id;
 
-      // 2. Parallel ingestion of secondary scaled data
+      // 2. Parallel ingestion of secondary scaled data — all receive the same opgId
       const [revCount, photoCount] = await Promise.all([
-        insertReviews(gymId, crawledData.reviews),
-        upsertPhotos(gymId, crawledData.photos, now),
-        upsertCrawlMeta(gymId, crawledData.crawlMeta, now)
+        insertReviews(gymId, crawledData.reviews, opgId),
+        upsertPhotos(gymId, crawledData.photos, now, opgId),
+        upsertCrawlMeta(gymId, crawledData.crawlMeta, now, opgId)
       ]);
 
       result.newReviews = revCount || 0;
       result.newPhotos = photoCount || 0;
 
-      logger.info(`[INSERT] "${crawledData.name}" → new gym added (dual-write active)`);
+      logger.info(`[INSERT] "${crawledData.name}" → new gym added (opgId: ${opgId})`);
       result.action = 'inserted';
       result.gymId = gymId;
       return result;
@@ -420,7 +434,28 @@ async function upsertGym(crawledData) {
 
     // ── UPDATE path ──────────────────────────────────────────────────────────
     const gymId = existing._id;
+    // opgId is NEVER regenerated — always preserved from the existing record.
+    const opgId = existing.opgId || null;
     const $set  = {};
+
+    // Backfill opgId onto any related docs that are still missing it.
+    // This handles the transition window before migration runs.
+    if (opgId) {
+      await Promise.all([
+        Review.updateMany(
+          { gymId, opgId: { $exists: false } },
+          { $set: { opgId } }
+        ),
+        Photo.updateMany(
+          { gymId, opgId: { $exists: false } },
+          { $set: { opgId } }
+        ),
+        CrawlMeta.updateOne(
+          { gymId, opgId: { $exists: false } },
+          { $set: { opgId } }
+        ),
+      ]);
+    }
 
     // 1. Diff tracked fields
     const diffs = diffTrackedFields(existing, crawledData);
@@ -431,9 +466,9 @@ async function upsertGym(crawledData) {
 
     // 2. Parallel ingestion of external records (Merging into secondary collections)
     const [reviewResult, photoResult] = await Promise.all([
-      mergeReviews(gymId, crawledData.reviews),
-      upsertPhotos(gymId, crawledData.photos, now),
-      upsertCrawlMeta(gymId, crawledData.crawlMeta, now)
+      mergeReviews(gymId, crawledData.reviews, opgId),
+      upsertPhotos(gymId, crawledData.photos, now, opgId),
+      upsertCrawlMeta(gymId, crawledData.crawlMeta, now, opgId)
     ]);
     result.newReviews = reviewResult;
     result.newPhotos = photoResult;
