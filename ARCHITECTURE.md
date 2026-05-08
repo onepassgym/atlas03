@@ -117,8 +117,8 @@ atlas06/
 ├── docs/
 │   └── database_structure.md    # DB schema reference
 ├── migration/
-│   ├── index.js                 # Migration runner (cron + --run=<name> dispatch)
-│   ├── addOpgIds.js             # Backfill opgId across all 6 collections (idempotent)
+│   ├── index.js                 # Migration scheduler (2 cron jobs: 00:01 + 04:00 IST)
+│   ├── addOpgIds.js             # Standalone backfill script (manual/emergency use)
 │   ├── createIndexes.js         # Index creation migration
 │   ├── migrateGym.js            # Gym schema migration
 │   ├── seedStaticData.js        # Category/amenity seed data
@@ -294,35 +294,30 @@ name, address, contact.phone, contact.email, contact.website
 
 ### Migration Scripts
 
-| Script | Invocation | Description |
-|--------|-----------|-------------|
-| `addOpgIds.js` | `npm run migrate:opgid` | Backfill `opgId` on all gyms + related collections (dev DB) |
-| `addOpgIds.js` | `npm run migrate:opgid:prod` | Same, foreground, against prod MongoDB |
-| `addOpgIds.js` | `npm run migrate:opgid:bg` | Background (nohup) run against dev DB |
-| `addOpgIds.js` | `npm run migrate:opgid:prod:bg` | **Production background run** — detaches from terminal, PID → `logs/migrate-opgid.pid`, output → `logs/migrate-opgid-<ts>.log` |
-| — | `npm run migrate:opgid:logs` | `tail -f` the latest migration log file |
-| — | `npm run migrate:opgid:status` | Print PID of any running migration |
+The migration runner (`migration/index.js`) is a **long-lived scheduled process** with two registered cron jobs:
 
-**Background migration flow (prod):**
+| Time (IST) | Job | Description |
+|------------|-----|-------------|
+| `00:01 AM` | `runGymSchemaMigration()` | Legacy gym schema backfill (gyms where `parsed ≠ true`) |
+| `04:00 AM` | `runOpgIdMigration()` | **Nightly sweep** — assigns `opgId` to any gym still missing it. Idempotent; no-op once all gyms are covered. |
+
+**Starting the scheduler:**
 ```bash
-# 1. Launch — safe to close terminal
-npm run migrate:opgid:prod:bg
-
-# 2. Watch live progress
-npm run migrate:opgid:logs
-
-# 3. Check it is still alive
-npm run migrate:opgid:status
-
-# 4. Emergency stop
-kill $(cat logs/migrate-opgid.pid)
+npm run migration          # dev MongoDB
+npm run migration:prod     # prod MongoDB (NODE_ENV=production)
 ```
 
-**`scripts/migrate-bg.sh` behaviour:**
-- Writes stdout+stderr to `logs/migrate-opgid-YYYYMMDD-HHMMSS.log`
-- Writes PID to `logs/migrate-opgid.pid`
-- **Guards double-runs** — aborts if previous PID is still alive
-- Reads `NODE_ENV` from environment so the same script serves dev and prod
+**Manual one-shot (emergency use only):**
+```bash
+npm run migrate:opgid             # dev
+npm run migrate:opgid:prod        # prod
+```
+
+**Key design decisions:**
+- Both jobs share a single persistent MongoDB connection (no reconnect cost per run)
+- `runOpgIdMigration()` is safe to leave running permanently — once all gyms have `opgId` it reports "Nothing to do" in under a second
+- Cron timezone is `Asia/Kolkata` (IST) — matches the existing scheduler in `schedulerService.js`
+- `--run=addOpgIds` flag routes directly to the standalone `addOpgIds.js` script for backward compat
 
 
 ### Configuration
@@ -577,7 +572,8 @@ router.METHOD('/path',
 
 | Date | Author | Changes |
 |------|--------|---------|
-| 2026-05-09 | Antigravity | **Background migration** — `scripts/migrate-bg.sh` nohup wrapper; 4 new npm scripts (`migrate:opgid:bg`, `migrate:opgid:prod:bg`, `migrate:opgid:logs`, `migrate:opgid:status`); double-run guard via PID file; timestamped log files; ARCHITECTURE.md updated with Migration Scripts section |
+| 2026-05-09 | Antigravity | **Migration scheduler refactor** — `migration/index.js` rewritten as multi-job cron scheduler; `runOpgIdMigration()` added at **04:00 IST daily** (idempotent sweep); both jobs share persistent DB connection; timezone-aware via `Asia/Kolkata`; `npm run migration` / `npm run migration:prod` to start; bg scripts removed; ARCHITECTURE.md Migration Scripts section updated |
+| 2026-05-09 | Antigravity | **Background migration** — `scripts/migrate-bg.sh` nohup wrapper (superseded by scheduler) |
 | 2026-05-09 | Antigravity | **opgId rollout** — Tasks 1–6: `src/utils/opgId.js` (generator + validator); `opgId` field added to all 6 schemas (gyms unique/sparse, others plain index); `ensureIndexes.js` extended with 6 new index calls; `migration/addOpgIds.js` idempotent backfill + `npm run migrate:opgid`; `upsertGym.js` INSERT generates unique opgId before `Gym.create()`, UPDATE preserves existing opgId + backfills related docs; `gymRoutes.js` /:id → /:opgId with `resolveGym` middleware + format validator; `toJSON` transform on GymSchema strips `_id`/`__v` from API responses |
 | 2026-05-09 | Antigravity | **Enrichment session** — Tasks 1–7: `MEDIA_DOWNLOAD_ENABLED` env gate; `rawPhotoUrls[]`, `pricing`, `operationalData`, `extraAttributes`, expanded `contact` schema fields; `sourceType`+`downloaded` on gym_photos; `reviewPhotos[]`, `reviewerLocalGuideLevel`, `ownerReply.respondedAtRaw` on reviews; `scrapeEnrichmentDetail()` + `scrapeAboutTabExhaustive()`; `enrichmentProcessor.js`; `gym-enrichment` BullMQ job type + `atlas06-enrichment` queue; `scripts/enrichNCR.js` CLI; 5 new DB indexes |
 | 2026-05-09 | Antigravity | Fix `apiFetch` to throw on non-2xx HTTP; add `gym_crawl_jobs` indexes (TD-08 ✅); move `express.json()` to router-level in systemRoutes; add search retry logic to scraper; update route inventory with `force-complete` + `start-now`; mark TD-05 ✅ TD-07 ✅ TD-08 ✅; add TD-09 for undocumented chain/events routes |

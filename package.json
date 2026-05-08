@@ -25,10 +25,8 @@
     "dev:all": "concurrently -c \"cyan,magenta,yellow,green,blue\" \"npm run dev\" \"npm run dev:worker\" \"npm run dev:worker:enrich\" \"npm run dev:worker:chain\" \"npm run dashboard:dev\"",
     "migrate:opgid": "node migration/index.js --run=addOpgIds",
     "migrate:opgid:prod": "NODE_ENV=production node migration/index.js --run=addOpgIds",
-    "migrate:opgid:bg": "bash scripts/migrate-bg.sh",
-    "migrate:opgid:prod:bg": "NODE_ENV=production bash scripts/migrate-bg.sh",
-    "migrate:opgid:logs": "tail -f logs/$(ls -t logs | grep migrate-opgid | head -1)",
-    "migrate:opgid:status": "cat logs/migrate-opgid.pid 2>/dev/null && echo '' || echo 'No migration PID file found'"
+    "migration": "node migration/index.js",
+    "migration:prod": "NODE_ENV=production node migration/index.js"
   },
   "dependencies": {
     "axios": "1.7.2",
