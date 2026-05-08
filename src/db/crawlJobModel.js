@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 
 const CrawlJobSchema = new mongoose.Schema({
   jobId:  { type: String, required: true, unique: true },
-  type:   { type: String, enum: ['city', 'gym_name', 'retry', 'chain'], default: 'city' },
+  type:   { type: String, enum: ['city', 'gym_name', 'retry', 'chain', 'enrichment'], default: 'city' },
 
   input: {
     cityName:   String,

@@ -52,11 +52,25 @@ async function ensureIndexes() {
   await photos.createIndex({ isOrphaned: 1 },       { name: 'photos_isOrphaned' });
   await photos.createIndex({ fsExists: 1, gymId: 1 }, { name: 'photos_fsExists_gymId' });
   await photos.createIndex({ gymId: 1 }, { name: 'photos_unlinked_partial', partialFilterExpression: { gymId: null } });
+  // Task 7: enrichment-specific indexes
+  await photos.createIndex({ gymId: 1, sourceType: 1 }, { name: 'photos_gymId_sourceType' });
+  await photos.createIndex({ downloaded: 1, gymId: 1 }, { name: 'photos_downloaded_gymId' });
+  // Supports upsertCapturedPhotoUrls filter: { originalUrl, gymId }
+  await photos.createIndex({ originalUrl: 1, gymId: 1 }, { sparse: true, name: 'photos_originalUrl_gymId' });
 
   // ── gym_crawl_meta ────────────────────────────────────────────────────────
   const crawlMeta = db.collection('gym_crawl_meta');
   await crawlMeta.createIndex({ gymId: 1 },  { unique: true, name: 'crawlMeta_gymId_unique' });
   await crawlMeta.createIndex({ jobId: 1 },  { name: 'crawlMeta_jobId' });
+
+  // ── gym_crawl_jobs ────────────────────────────────────────────────────────
+  // TD-08 fix: this was the only modelled collection missing from ensureIndexes.
+  const crawlJobs = db.collection('gym_crawl_jobs');
+  await crawlJobs.createIndex({ jobId: 1 },              { unique: true,  name: 'crawlJobs_jobId_unique' });
+  await crawlJobs.createIndex({ status: 1, createdAt: -1 }, { name: 'crawlJobs_status_createdAt' });
+  await crawlJobs.createIndex({ createdAt: -1 },         { name: 'crawlJobs_createdAt' });
+  // Supports hasActiveJob() dedup query: filter by cityName + status in ['queued','running']
+  await crawlJobs.createIndex({ 'input.cityName': 1, status: 1 }, { name: 'crawlJobs_cityName_status' });
 
   // ── gym_categories ────────────────────────────────────────────────────────
   const categories = db.collection('gym_categories');
@@ -77,6 +91,18 @@ async function ensureIndexes() {
   // ── system_states ─────────────────────────────────────────────────────────
   const systemStates = db.collection('system_states');
   await systemStates.createIndex({ key: 1 }, { unique: true, name: 'systemStates_key_unique' });
+
+  // ── enrichment-specific gyms indexes (Task 7) ────────────────────────────
+  // Supports dashboard query: list gyms by city that need re-enrichment
+  await gyms.createIndex(
+    { 'atlas06.city': 1, 'operationalData.lastHoursVerifiedAt': 1 },
+    { sparse: true, name: 'gyms_city_lastHoursVerifiedAt' }
+  );
+  // Supports enrichment targeting by areaName + enrichment status
+  await gyms.createIndex(
+    { areaName: 1, 'enrichmentMeta.status': 1 },
+    { name: 'gyms_areaName_enrichmentStatus' }
+  );
 
   logger.info('✅ DB indexes verified/created (all collections)');
 }

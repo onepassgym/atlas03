@@ -24,9 +24,16 @@ const HoursSchema = new mongoose.Schema({
 }, { _id: false });
 
 const ContactSchema = new mongoose.Schema({
-  phone:   String,
-  website: String,
-  email:   String,
+  phone:      String,
+  phone2:     String,      // secondary phone if listed
+  website:    String,
+  email:      String,
+  whatsapp:   String,      // WhatsApp number if shown
+  instagram:  String,      // full URL
+  facebook:   String,      // full URL
+  youtube:    String,      // full URL
+  bookingUrl: String,      // "Book" / "Reserve" CTA link
+  menuUrl:    String,      // class schedule PDF or menu link
 }, { _id: false });
 
 // (Legacy Schema omitted array embedded objects like reviews/photos to save space - they are now separate models)
@@ -89,14 +96,49 @@ const GymSchema = new mongoose.Schema({
   isOpenNow:    Boolean,
   popularTimes: mongoose.Schema.Types.Mixed,
 
-  // Merged Cover Media fields
+  // Media
   coverPhoto: {
-    publicUrl: String,
+    publicUrl:    String,
     thumbnailUrl: String,
-    width: Number,
-    height: Number
+    width:        Number,
+    height:       Number
   },
-  totalPhotos: { type: Number, default: 0 },
+  // All captured photo/video URLs — no downloads, deduped list
+  rawPhotoUrls:  [String],
+  totalPhotos:   { type: Number, default: 0 },
+
+  // Pricing — raw text only, never parsed/normalised
+  pricing: {
+    rawText:    String,
+    source:     { type: String, default: 'google_maps' },
+    capturedAt: Date,
+  },
+
+  // Operational data — hours accuracy extension
+  operationalData: {
+    // Structured popular-times busyness per day
+    popularTimesData: [{
+      day:   String,
+      hours: [{ hour: Number, busyness: Number }],
+      _id:   false,
+    }],
+    // Holiday / special-date hour overrides
+    specialHours: [{
+      date:     String,  // e.g. "Dec 25"
+      label:    String,  // e.g. "Christmas Day"
+      open:     String,
+      close:    String,
+      isClosed: Boolean,
+      _id:      false,
+    }],
+    lastHoursVerifiedAt: Date,
+  },
+
+  // Unmapped Google attribute sections — key = section label, value = array of items
+  extraAttributes: {
+    type: Map,
+    of:   [String],
+  },
 
   // Enrichment Summary
   enrichmentMeta: {

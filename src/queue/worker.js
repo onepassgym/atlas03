@@ -3,12 +3,13 @@ require('dotenv').config();
 
 const { Worker } = require('bullmq');
 const { connectDB }   = require('../db/connection');
-const { BrowserManager, searchGymsInCity, scrapeGymDetail, FITNESS_CATEGORIES, isBlocked } = require('../scraper/googleMapsScraper');
+const { BrowserManager, searchGymsInCity, scrapeGymDetail, scrapeEnrichmentDetail, FITNESS_CATEGORIES, isBlocked } = require('../scraper/googleMapsScraper');
 const { processGym }  = require('../scraper/gymProcessor');
+const { processEnrichmentJob } = require('../scraper/enrichmentProcessor');
 const CrawlJob        = require('../db/crawlJobModel');
-const Gym             = require('../db/gymModel');   // Phase 7: pre-filter known URLs
+const Gym             = require('../db/gymModel');
 const SystemState     = require('../db/systemStateModel');
-const { isJobCancelled, clearCancelFlag, addBatchScrapeJob } = require('./queues');
+const { isJobCancelled, clearCancelFlag, addBatchScrapeJob, enrichmentQueue } = require('./queues');
 const cfg             = require('../../config');
 const logger          = require('../utils/logger');
 const bus             = require('../services/eventBus');
@@ -620,31 +621,99 @@ async function processGymNameJob(job) {
   }
 }
 
+// ── Task 6: Gym enrichment job handler ────────────────────────────────────────
+async function processEnrichmentJobHandler(job) {
+  const { gymId, input = {} } = job.data;
+  const { placeUrl, cityName } = input;
+  const startTime = Date.now();
+
+  if (!gymId || !placeUrl) {
+    throw new Error('gym-enrichment job missing gymId or placeUrl');
+  }
+
+  await connectDB();
+  logger.info(`✨ [ENRICH] gym:${gymId} (${cityName || '?'}) — ${placeUrl.slice(-60)}`);
+
+  const browser = new BrowserManager();
+  try {
+    await browser.launch();
+    const page = await browser.newPage();
+    await job.updateProgress(20);
+
+    let enriched = null;
+    let lastErr  = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        enriched = await scrapeEnrichmentDetail(page, placeUrl);
+        break;
+      } catch (err) {
+        lastErr = err;
+        const isBlock = err.message.includes('Google blocked');
+        logger.warn(`  [ENRICH] attempt ${attempt}/3 failed: ${err.message}`);
+        if (isBlock) await sleep(30000, 60000);
+        else         await sleep(5000 * attempt, 8000 * attempt);
+      }
+    }
+    await job.updateProgress(75);
+    if (!enriched) throw lastErr || new Error('scrapeEnrichmentDetail returned null');
+
+    const res = await processEnrichmentJob(enriched, gymId, job.id);
+    await job.updateProgress(100);
+    await browser.close();
+
+    const durationMs = Date.now() - startTime;
+    logger.info(`  [ENRICH] Done: action=${res.action} +${res.newReviews}rev +${res.newPhotos}photos (${(durationMs/1000).toFixed(1)}s)`);
+    return { gymId, ...res, durationMs };
+
+  } catch (err) {
+    await browser.close();
+    logger.error(`  [ENRICH] FAILED gym:${gymId}: ${err.message}`);
+    throw err;
+  }
+}
+
 // ── Worker startup ───────────────────────────────────────────────────────────
 
 async function start() {
   await connectDB();
 
+  // ── Crawl Worker (city-crawl, batch-scrape, gym-name-crawl) ───────────────
   const worker = new Worker('atlas06-crawl', async (job) => {
     logger.info(`⚙️  Processing job: ${job.name} [${job.id}]`);
     if (job.name === 'city-crawl')     return processCityJob(job);
-    if (job.name === 'batch-scrape')   return processBatchJob(job);  // Phase 9
+    if (job.name === 'batch-scrape')   return processBatchJob(job);
     if (job.name === 'gym-name-crawl') return processGymNameJob(job);
     throw new Error(`Unknown job name: ${job.name}`);
   }, {
     connection,
     concurrency: CONCURRENCY,
-    // A batch of 10 URLs with reviews + photos + safe delays can take 30-45 min.
-    // lockDuration must exceed worst-case runtime to prevent stall→failed.
-    lockDuration:    2_700_000,  // 45 min lock
-    lockRenewTime:     300_000,  // renew every 5 min (keepalive) — must be < lockDuration/2
+    lockDuration:    2_700_000,
+    lockRenewTime:     300_000,
   });
 
-  worker.on('completed', (job) => logger.info(`✅ Job completed: ${job.id}`));
-  worker.on('failed',    (job, err) => logger.error(`❌ Job failed: ${job?.id} — ${err.message}`));
-  worker.on('error',     (err) => logger.error(`Worker error: ${err.message}`));
+  // ── Enrichment Worker (gym-enrichment) ────────────────────────────────
+  // Separate worker for the enrichment queue. Concurrency=1 per container
+  // to avoid opening too many browser instances simultaneously.
+  const enrichWorker = new Worker('atlas06-enrichment', async (job) => {
+    logger.info(`✨ Processing enrichment job: ${job.name} [${job.id}]`);
+    if (job.name === 'gym-enrichment') return processEnrichmentJobHandler(job);
+    throw new Error(`Unknown enrichment job: ${job.name}`);
+  }, {
+    connection,
+    concurrency: 1,            // 1 browser per enrichment worker
+    lockDuration:    1_800_000, // 30 min lock per gym (500 reviews takes time)
+    lockRenewTime:     300_000,
+  });
+
+  worker.on('completed',      (job) => logger.info(`✅ Job completed: ${job.id}`));
+  worker.on('failed',         (job, err) => logger.error(`❌ Job failed: ${job?.id} — ${err.message}`));
+  worker.on('error',          (err) => logger.error(`Worker error: ${err.message}`));
+  enrichWorker.on('completed',(job) => logger.info(`✅ Enrichment completed: ${job.id}`));
+  enrichWorker.on('failed',   (job, err) => logger.error(`❌ Enrichment failed: ${job?.id} — ${err.message}`));
+  enrichWorker.on('error',    (err) => logger.error(`Enrichment worker error: ${err.message}`));
 
   logger.info(`\n🚀 Atlas06 Worker started  [concurrency: ${CONCURRENCY}, pagePool: ${PAGE_POOL}, lockDuration: 1800s, lockRenewTime: 300s]`);
+  logger.info(`✨ Enrichment Worker started [concurrency: 1, lockDuration: 1800s]`);
 
   // ── Graceful shutdown ────────────────────────────────────────────────────
   const shutdown = async (signal) => {
@@ -652,9 +721,8 @@ async function start() {
     isShuttingDown = true;
     logger.info(`\n⏳ Received ${signal} — finishing current gym(s) and shutting down...`);
 
-    try {
-      await worker.close();
-    } catch (_) {}
+    try { await worker.close(); } catch (_) {}
+    try { await enrichWorker.close(); } catch (_) {}
 
     logger.info('👋 Worker shut down gracefully.');
     process.exit(0);

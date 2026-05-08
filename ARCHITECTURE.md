@@ -2,7 +2,7 @@
 
 > **Living document.** Keep this updated as modules change.  
 > Run `node scripts/genArchSnapshot.js` to auto-regenerate the inventory sections.  
-> Last manual review: **2026-04-18**
+> Last manual review: **2026-05-09 (enrichment session)**
 
 ---
 
@@ -193,23 +193,30 @@ atlas06/
 
 | File | Exports | Responsibility |
 |------|---------|---------------|
-| `googleMapsScraper.js` | `BrowserManager`, `searchGymsInCity()`, `scrapeGymDetail()`, `FITNESS_CATEGORIES` | Playwright-based Google Maps automation |
+| `googleMapsScraper.js` | `BrowserManager`, `searchGymsInCity()`, `scrapeGymDetail()`, `scrapeEnrichmentDetail()`, `scrapeAboutTabExhaustive()`, `FITNESS_CATEGORIES` | Playwright-based Google Maps automation + enrichment-mode scraper |
 | `gymProcessor.js` | `processGym()` | Transforms raw scraped data → structured document, downloads media, calls `upsertGym()` |
+| `enrichmentProcessor.js` | `processEnrichmentJob()` | Applies enrichment scrape data to existing gym doc (Tasks 1–5): photo URL capture, deep review merge, operational data, contact enrichment, extraAttributes |
 
 **Key constants:**
-- `FITNESS_CATEGORIES` — array of 16 search terms (gym, yoga studio, crossfit, etc.)
+- `FITNESS_CATEGORIES` — array of **10** search terms (trimmed from 16 in Phase 6b — dropped 6 low-yield overlapping entries)
 - `USER_AGENTS` — pool of 15 user-agent strings for rotation
-- Review scraping: up to **150 reviews** per gym
-- Photo scraping: up to **80 photos** per gym
+- Review scraping: up to **150 reviews** per gym (deep mode), 30 (standard), 0 (fast), **500** (enrichment)
+- Photo scraping: up to **80 photos** per gym (deep mode), 20 (standard), 0 (fast), **500** (enrichment, URL capture only)
+- Search retry: up to **2 retries** on Google block with exponential backoff (15–30s → 30–60s)
+- **`MEDIA_DOWNLOAD_ENABLED`** env flag (default `false`) — gates ALL Sharp/Axios downloads; enrichment always captures URLs only
 
 ### Queue System
 
 | File | Exports | Responsibility |
 |------|---------|---------------|
-| `queues.js` | `addCityJob()`, `addGymNameJob()`, `getQueueStats()`, `requestCancelJob()`, `isJobCancelled()`, etc. | BullMQ queue management + Redis cancel flags |
-| `worker.js` | (auto-starts) | Processes `city-crawl` and `gym-name-crawl` jobs |
+| `queues.js` | `addCityJob()`, `addGymNameJob()`, `addEnrichmentJob()`, `getQueueStats()`, `getEnrichmentQueueStats()`, `requestCancelJob()`, `isJobCancelled()`, etc. | BullMQ queue management + Redis cancel flags |
+| `worker.js` | (auto-starts) | Processes `city-crawl`, `batch-scrape`, `gym-name-crawl` (crawl queue) and `gym-enrichment` (enrichment queue) jobs |
 
-**Queue name:** `atlas06-crawl`  
+**Queue names:**
+- `atlas06-crawl` — city crawl, batch scrape, gym name crawl (priority 1 for active crawls)
+- `atlas06-enrichment` — per-gym enrichment jobs (priority 2, separate worker, concurrency 1)
+- `atlas06-media` — media download jobs (legacy, gated by `MEDIA_DOWNLOAD_ENABLED`)
+
 **Cancellation:** Redis key `atlas06:cancel:{jobId}` with 1-hour TTL
 
 ### Database Layer
@@ -309,6 +316,8 @@ name, address, contact.phone, contact.email, contact.website
 | `POST` | `/retry/failed` | None | Re-queue all failed/partial city jobs |
 | `POST` | `/retry/incomplete` | None | Re-queue gyms below completeness threshold |
 | `DELETE` | `/jobs/:jobId` | None | Delete a job record |
+| `POST` | `/force-complete/:jobId` | None | Instantly mark running job as completed + stop worker |
+| `POST` | `/start-now/:jobId` | None | Promote queued job to front of BullMQ queue |
 
 ### Gym Routes (`/api/gyms`)
 
@@ -472,10 +481,11 @@ If FOUND → UPDATE path:
 | TD-02 | 🟡 Medium | `.env` references `atlas06` DB but project is `atlas06` | `.env`, `config/index.js` |
 | TD-03 | 🟡 Medium | Stray `{src` directory at project root (broken mkdir) | Project root |
 | TD-04 | 🟡 Medium | `dedup.js` `mergeGymData()` is deprecated but still exported | `src/utils/dedup.js:78` |
-| TD-05 | 🟡 Medium | `upsertGym.js` always writes `$set` even when nothing changed | `src/db/upsertGym.js:461` |
+| TD-05 | ✅ Resolved | `upsertGym.js` dirty-check implemented — `$set` only written when diffs/reviews/photos changed | `src/db/upsertGym.js:486` |
 | TD-06 | 🟠 Low | No API authentication — destructive endpoints are open | All route files |
-| TD-07 | 🟠 Low | `reviews` collection name in ensureIndexes.js doesn't match model's `gym_reviews` | `src/db/ensureIndexes.js:24` |
-| TD-08 | 🟠 Low | `ensureIndexes.js` only indexes 3 collections but there are 9 | `src/db/ensureIndexes.js` |
+| TD-07 | ✅ Resolved | `ensureIndexes.js` collection name corrected to `gym_reviews` | `src/db/ensureIndexes.js:29` |
+| TD-08 | ✅ Resolved | Added `gym_crawl_jobs` indexes (4 indexes); all 9 modelled collections now indexed | `src/db/ensureIndexes.js:61-68` |
+| TD-09 | 🟠 Low | `POST /api/chains/crawl/start`, `/api/chains/tag-existing`, `/api/events/test`, `/api/events/stats` referenced in dashboard but not documented — may be in undocumented route files | `dashboard/src/components/SystemPanel.jsx` |
 
 ---
 
@@ -529,5 +539,7 @@ router.METHOD('/path',
 
 | Date | Author | Changes |
 |------|--------|---------|
+| 2026-05-09 | Antigravity | **Enrichment session** — Tasks 1–7: `MEDIA_DOWNLOAD_ENABLED` env gate; `rawPhotoUrls[]`, `pricing`, `operationalData`, `extraAttributes`, expanded `contact` schema fields; `sourceType`+`downloaded` on gym_photos; `reviewPhotos[]`, `reviewerLocalGuideLevel`, `ownerReply.respondedAtRaw` on reviews; `scrapeEnrichmentDetail()` + `scrapeAboutTabExhaustive()`; `enrichmentProcessor.js`; `gym-enrichment` BullMQ job type + `atlas06-enrichment` queue; `scripts/enrichNCR.js` CLI; 5 new DB indexes |
+| 2026-05-09 | Antigravity | Fix `apiFetch` to throw on non-2xx HTTP; add `gym_crawl_jobs` indexes (TD-08 ✅); move `express.json()` to router-level in systemRoutes; add search retry logic to scraper; update route inventory with `force-complete` + `start-now`; mark TD-05 ✅ TD-07 ✅ TD-08 ✅; add TD-09 for undocumented chain/events routes |
 | 2026-04-18 | Antigravity | Initial architecture document created |
 | | | Add new rows above this line |

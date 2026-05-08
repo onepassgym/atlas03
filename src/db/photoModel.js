@@ -2,11 +2,21 @@
 const mongoose = require('mongoose');
 
 const PhotoSchema = new mongoose.Schema({
-  gymId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Gym', index: true }, // optional — filesystem-synced files may lack gymId
+  gymId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Gym', index: true },
   originalUrl:  String,
   localPath:    String,
   publicUrl:    { type: String, sparse: true },
   thumbnailUrl: String,
+  // Source classification — enrichment adds more granular types
+  sourceType: {
+    type: String,
+    enum: ['user', 'owner', 'cover', 'video_thumb', 'streetview', 'review_photo'],
+    default: 'user',
+    index: true,
+  },
+  // Download tracking — false = URL captured only, true = file exists on disk
+  downloaded:   { type: Boolean, default: false },
+  capturedAt:   { type: Date, default: Date.now },
   type:         { type: String, enum: ['photo', 'video', 'thumbnail', 'cover'], default: 'photo', index: true },
   caption:      String,
   filename:     String,           // basename of stored file
@@ -35,6 +45,8 @@ const PhotoSchema = new mongoose.Schema({
 // ── Compound indexes for scalable queries ──────────────────────────────────────
 PhotoSchema.index({ publicUrl: 1 }, { unique: true, sparse: true });
 PhotoSchema.index({ gymId: 1, type: 1 });
+PhotoSchema.index({ gymId: 1, sourceType: 1 });               // Task 7 index
+PhotoSchema.index({ downloaded: 1, gymId: 1 });               // Task 7 index — future download queue
 PhotoSchema.index({ gymId: 1, createdAt: -1 });
 PhotoSchema.index({ type: 1, createdAt: -1 });
 PhotoSchema.index({ createdAt: -1 });

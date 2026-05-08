@@ -47,11 +47,19 @@ module.exports = {
     // Phase 1c / Phase 4: depth caps per standard-mode scrape
     maxReviews:  parseInt(process.env.SCRAPER_MAX_REVIEWS || '30', 10),
     maxPhotos:   parseInt(process.env.SCRAPER_MAX_PHOTOS  || '20', 10),
+    // Enrichment mode: deeper caps for NCR targeted pass
+    enrichMaxReviews: parseInt(process.env.ENRICHMENT_MAX_REVIEWS || '500', 10),
+    enrichMaxPhotos:  parseInt(process.env.ENRICHMENT_MAX_PHOTOS  || '500', 10),
+    enrichBatchSize:  parseInt(process.env.ENRICHMENT_BATCH_SIZE  || '50',  10),
     userAgent:   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   },
+  // ── Media download toggle (MEDIA_DOWNLOAD_ENABLED=false = URL capture only) ──
+  // Default: false — all enrichment passes operate URL-capture-only.
+  // Set to true in .env to re-enable Sharp/Axios downloads via downloader.js.
   media: {
-    basePath: process.env.MEDIA_BASE_PATH || './media',
-    baseUrl:  getEnv('MEDIA_BASE_URL', isProd ? 'https://atlas.onepassgym.com/media' : `http://localhost:${process.env.PORT || '8747'}/media`),
+    basePath:        process.env.MEDIA_BASE_PATH || './media',
+    baseUrl:         getEnv('MEDIA_BASE_URL', isProd ? 'https://atlas.onepassgym.com/media' : `http://localhost:${process.env.PORT || '8747'}/media`),
+    downloadEnabled: process.env.MEDIA_DOWNLOAD_ENABLED === 'true', // default false
   },
   dedup: {
     radiusMeters: parseInt(process.env.DEDUP_RADIUS_METERS || '50', 10),

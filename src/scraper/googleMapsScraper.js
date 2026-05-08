@@ -172,79 +172,100 @@ async function isBlocked(page) {
 
 // ── Search: collect all place URLs for a query ───────────────────────────────
 
+const MAX_SEARCH_RETRIES = 2; // max retry attempts after a Google block per category search
+
 async function searchGymsInCity(page, cityName, category) {
   const query = category
     ? `${category} in ${cityName}`
     : cityName; // direct gym name search
 
   const url = `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
-  logger.info(`  🔍 Searching: "${query}"`);
 
-  try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: cfg.scraper.timeout });
-  } catch (_) {
-    await page.goto(url, { waitUntil: 'commit', timeout: cfg.scraper.timeout });
-  }
+  for (let attempt = 1; attempt <= MAX_SEARCH_RETRIES + 1; attempt++) {
+    logger.info(`  🔍 Searching: "${query}"${attempt > 1 ? ` (retry ${attempt - 1})` : ''}`);
 
-  // Optimized delay — enough for Google to render results
-  await sleep(2000, 3000);
-
-  // Check for Google block/CAPTCHA immediately
-  const blockReason = await isBlocked(page);
-  if (blockReason) {
-    logger.warn(`  🚫 Google blocked search for "${query}" (reason: ${blockReason}) — backing off`);
-    // Long backoff to let rate limit cool down
-    await sleep(15000, 30000);
-    return [];
-  }
-
-  // Dismiss cookie banner if present
-  for (const sel of ['button:has-text("Accept all")', 'button:has-text("Agree")', 'button[aria-label="Accept all"]']) {
     try {
-      const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 1500 })) {
-        await btn.click();
-        await sleep(600, 1000);
-        break;
-      }
-    } catch (_) {}
-  }
-
-  const gymUrls  = new Set();
-  let   noNewFor = 0;
-  let   lastSize = 0;
-
-  while (true) {
-    // Grab all place links
-    const links = await page.locator('a[href*="/maps/place/"]').all();
-    for (const a of links) {
       try {
-        const href = await a.getAttribute('href');
-        if (href) gymUrls.add(href.split('?')[0].split('/@')[0]);
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: cfg.scraper.timeout });
+      } catch (_) {
+        await page.goto(url, { waitUntil: 'commit', timeout: cfg.scraper.timeout });
+      }
+    } catch (navErr) {
+      logger.warn(`  ⚠️ Navigation failed for "${query}" (attempt ${attempt}): ${navErr.message}`);
+      if (attempt > MAX_SEARCH_RETRIES) return [];
+      await sleep(10000, 20000);
+      continue;
+    }
+
+    // Optimized delay — enough for Google to render results
+    await sleep(2000, 3000);
+
+    // Check for Google block/CAPTCHA immediately
+    const blockReason = await isBlocked(page);
+    if (blockReason) {
+      if (attempt > MAX_SEARCH_RETRIES) {
+        logger.warn(`  🚫 Google blocked "${query}" after ${attempt} attempt(s) — giving up`);
+        return [];
+      }
+      // Exponential-ish backoff: 15–30s on first retry, 30–60s on second
+      const backoffMin = 15000 * attempt;
+      const backoffMax = 30000 * attempt;
+      logger.warn(`  🚫 Google blocked "${query}" (reason: ${blockReason}, attempt ${attempt}/${MAX_SEARCH_RETRIES + 1}) — backing off ${(backoffMin/1000).toFixed(0)}–${(backoffMax/1000).toFixed(0)}s`);
+      await sleep(backoffMin, backoffMax);
+      continue;
+    }
+
+    // Dismiss cookie banner if present
+    for (const sel of ['button:has-text("Accept all")', 'button:has-text("Agree")', 'button[aria-label="Accept all"]']) {
+      try {
+        const btn = page.locator(sel).first();
+        if (await btn.isVisible({ timeout: 1500 })) {
+          await btn.click();
+          await sleep(600, 1000);
+          break;
+        }
       } catch (_) {}
     }
 
-    // End of list?
-    const ended = await page.locator('text="You\'ve reached the end of the list."').isVisible({ timeout: 500 }).catch(() => false);
-    if (ended) break;
+    const gymUrls  = new Set();
+    let   noNewFor = 0;
+    let   lastSize = 0;
 
-    // Scroll the results panel
-    const panel = page.locator('div[role="feed"]').first();
-    try {
-      await panel.evaluate(el => el.scrollBy(0, 1200));
-    } catch (_) {
-      await page.mouse.wheel(0, 1200);
+    while (true) {
+      // Grab all place links
+      const links = await page.locator('a[href*="/maps/place/"]').all();
+      for (const a of links) {
+        try {
+          const href = await a.getAttribute('href');
+          if (href) gymUrls.add(href.split('?')[0].split('/@')[0]);
+        } catch (_) {}
+      }
+
+      // End of list?
+      const ended = await page.locator('text="You\'ve reached the end of the list."').isVisible({ timeout: 500 }).catch(() => false);
+      if (ended) break;
+
+      // Scroll the results panel
+      const panel = page.locator('div[role="feed"]').first();
+      try {
+        await panel.evaluate(el => el.scrollBy(0, 1200));
+      } catch (_) {
+        await page.mouse.wheel(0, 1200);
+      }
+      // Optimized scroll delay
+      await sleep(1200, 2000);
+
+      if (gymUrls.size === lastSize) { if (++noNewFor >= 5) break; }
+      else noNewFor = 0;
+      lastSize = gymUrls.size;
     }
-    // Optimized scroll delay
-    await sleep(1200, 2000);
 
-    if (gymUrls.size === lastSize) { if (++noNewFor >= 5) break; }
-    else noNewFor = 0;
-    lastSize = gymUrls.size;
+    logger.info(`  ✅ Found ${gymUrls.size} URLs for "${query}"`);
+    return [...gymUrls];
   }
 
-  logger.info(`  ✅ Found ${gymUrls.size} URLs for "${query}"`);
-  return [...gymUrls];
+  // Safety net — should not reach here
+  return [];
 }
 
 // ── Detail: scrape full gym data from a place page ───────────────────────────
@@ -254,8 +275,9 @@ async function searchGymsInCity(page, cityName, category) {
 //   'deep'     → core + about tab + 150 reviews + 80 photos
 
 async function scrapeGymDetail(page, url, mode = 'standard') {
-  const maxReviews = mode === 'deep' ? 150 : (mode === 'fast' ? 0 : cfg.scraper.maxReviews);
-  const maxPhotos  = mode === 'deep' ? 80  : (mode === 'fast' ? 0 : cfg.scraper.maxPhotos);
+  // enrichment mode: 500 reviews, 500 photos (URL capture only)
+  const maxReviews = mode === 'deep' ? 150 : mode === 'enrichment' ? cfg.scraper.enrichMaxReviews : (mode === 'fast' ? 0 : cfg.scraper.maxReviews);
+  const maxPhotos  = mode === 'deep' ? 80  : mode === 'enrichment' ? cfg.scraper.enrichMaxPhotos  : (mode === 'fast' ? 0 : cfg.scraper.maxPhotos);
 
   try {
     try {
@@ -420,6 +442,150 @@ async function scrapeGymDetail(page, url, mode = 'standard') {
   return { ...core, amenities: mergedAmenities, reviews, reviewSummary, photoUrls: [...new Set(allPhotos)] };
 }
 
+// ── Enrichment Detail Scraper — Tasks 1–5 (URL capture only, no downloads) ────
+// Navigates directly to a known gym URL and extracts all enrichment data points.
+// Called by processEnrichmentJob(). Returns enrichment-specific fields only.
+
+async function scrapeEnrichmentDetail(page, url) {
+  try {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: cfg.scraper.timeout });
+    } catch (_) {
+      await page.goto(url, { waitUntil: 'commit', timeout: cfg.scraper.timeout });
+    }
+    await sleep(1800, 2800);
+  } catch (err) {
+    throw new Error(`Navigation failed: ${err.message}`);
+  }
+
+  const blockReason = await isBlocked(page);
+  if (blockReason) {
+    await sleep(15000, 30000);
+    throw new Error(`Google blocked: ${blockReason}`);
+  }
+
+  // ── Task 3 + 5: Core data + operational + contact enrichment ─────────────
+  const core = await page.evaluate(() => {
+    const t  = s => document.querySelector(s)?.textContent?.trim() || null;
+    const a  = (s, attr) => document.querySelector(s)?.getAttribute(attr) || null;
+
+    // Task 5: Contact enrichment
+    const phone  = t('button[data-item-id^="phone:tel"] .Io6YTe') || t('[data-tooltip="Copy phone number"] .Io6YTe');
+    // Attempt secondary phone (some gyms list two)
+    const allPhones = [...document.querySelectorAll('button[data-item-id^="phone:tel"] .Io6YTe')].map(el => el.textContent?.trim()).filter(Boolean);
+    const phone2 = allPhones.length > 1 ? allPhones[1] : null;
+    const website = a('a[data-item-id="authority"]', 'href') || a('a[aria-label*="website" i]', 'href');
+    // Booking URL — "Book" / "Reserve" CTA buttons
+    const bookingUrl = a('a[aria-label*="Book" i], a[aria-label*="Reserve" i], a[data-item-id*="booking" i]', 'href');
+    // Menu URL — some gyms expose a schedule/menu link
+    const menuUrl = a('a[aria-label*="menu" i], a[aria-label*="class schedule" i]', 'href');
+    // Social links — look for icon-decorated links in the info panel
+    const allLinks = [...document.querySelectorAll('a[href]')].map(el => el.href).filter(Boolean);
+    const instagram  = allLinks.find(h => h.includes('instagram.com')) || null;
+    const facebook   = allLinks.find(h => h.includes('facebook.com')) || null;
+    const youtube    = allLinks.find(h => h.includes('youtube.com')) || null;
+    const whatsapp   = allLinks.find(h => h.includes('wa.me') || h.includes('whatsapp.com')) || null;
+
+    // Task 3: Opening hours
+    const hourRows = [...document.querySelectorAll('table.WgFkxc tr, .t39EBf tr')];
+    const openingHours = hourRows.map(row => {
+      const cells = row.querySelectorAll('td, th');
+      const day   = cells[0]?.textContent?.trim();
+      const times = cells[1]?.textContent?.trim();
+      if (!day) return null;
+      const closed = !times || /closed/i.test(times);
+      const open24 = /open 24/i.test(times);
+      const parts  = times?.split('\u2013').map(s => s.trim()) || [];
+      return { day, open: parts[0] || null, close: parts[1] || null, isClosed: closed, isOpen24: open24 };
+    }).filter(Boolean);
+
+    // Task 3: Special hours (holiday overrides) — these appear in a dedicated section
+    const specialHoursEls = [...document.querySelectorAll('.ZDu9vd, [data-attrid*="special_hours" i] tr')];
+    const specialHours = specialHoursEls.map(row => {
+      const cells = row.querySelectorAll('td, th');
+      const label = cells[0]?.textContent?.trim();
+      const times  = cells[1]?.textContent?.trim();
+      if (!label) return null;
+      return { date: null, label, open: times?.split('\u2013')[0]?.trim() || null, close: times?.split('\u2013')[1]?.trim() || null, isClosed: !times || /closed/i.test(times) };
+    }).filter(Boolean);
+
+    // Task 3: isOpenNow
+    const openNowEl = document.querySelector('.dpoVLd, [aria-label*="Open now" i], [aria-label*="Closed" i]');
+    const isOpenNow = openNowEl ? /open now/i.test(openNowEl.textContent) : null;
+
+    // Task 3: Popular times — structured busyness data
+    // Google renders popular times as aria-label="X% busy at Yam/pm" on bar segments
+    const ptMap = {};
+    const ptEls = [...document.querySelectorAll('[aria-label*="% busy at" i], [aria-label*="Busyness" i], [class*="popular-times"] [aria-label]')];
+    ptEls.forEach(el => {
+      const lbl = el.getAttribute('aria-label') || '';
+      // Pattern: "Usually X% busy at Y [Day]"
+      const match = lbl.match(/(\d+)%.*?(?:at|@)\s*(\d+)\s*(am|pm)?.*?([A-Za-z]+day)?/i);
+      if (!match) return;
+      const pct  = parseInt(match[1], 10);
+      let   hour = parseInt(match[2], 10);
+      const ampm = (match[3] || '').toLowerCase();
+      // Get the day from nearest day heading
+      const day = el.closest('[data-day]')?.getAttribute('data-day') || match[4] || null;
+      if (!day) return;
+      if (ampm === 'pm' && hour !== 12) hour += 12;
+      if (ampm === 'am' && hour === 12) hour = 0;
+      if (!ptMap[day]) ptMap[day] = [];
+      ptMap[day].push({ hour, busyness: pct });
+    });
+    const popularTimesData = Object.entries(ptMap).map(([day, hours]) => ({ day, hours: hours.sort((a, b) => a.hour - b.hour) }));
+
+    // Task 4: Pricing text
+    const priceLevel = t('[aria-label*="price range" i]') || null;
+    const pricingRawText = document.querySelector('.mgr77e, .YhemCb, [data-attrid*="price" i]')?.textContent?.trim() || priceLevel || null;
+
+    // Task 1: Cover photo from hero
+    const heroImg = document.querySelector('button[jsaction*="heroHeaderImage"] img, .RZ66Rb img:first-child');
+    const coverPhotoUrl = heroImg ? (heroImg.src || heroImg.dataset?.src) : null;
+
+    // Task 1: All hero/overview photo URLs (high-res)
+    const heroPhotoUrls = [...new Set(
+      [...document.querySelectorAll('button[jsaction*="heroHeaderImage"] img, .RZ66Rb img, .Uf0tqf img, a[data-photo-index] img, [data-photo-index] img')]
+        .map(img => img.src || img.dataset?.src)
+        .filter(src => src?.startsWith('http') && src.includes('googleusercontent') && !src.includes('StreetView'))
+        .map(src => src.replace(/=w\d+-h\d+[^&]*/, '=w1600-h1200'))
+    )];
+
+    // Task 1: Video thumbnails (data-thumbnail-url or video elements)
+    const videoThumbUrls = [...document.querySelectorAll('[data-thumbnail-url], video[poster]')]
+      .map(el => el.getAttribute('data-thumbnail-url') || el.getAttribute('poster'))
+      .filter(Boolean);
+
+    return {
+      phone, phone2, website, bookingUrl, menuUrl,
+      instagram, facebook, youtube, whatsapp,
+      openingHours, specialHours, isOpenNow, popularTimesData,
+      priceLevel, pricingRawText,
+      coverPhotoUrl, heroPhotoUrls, videoThumbUrls,
+      googleMapsUrl: window.location.href,
+    };
+  });
+
+  // ── Task 4: Exhaustive About Tab ─────────────────────────────────────────
+  const { amenities: deepAmenities, extraAttributes } = await scrapeAboutTabExhaustive(page);
+
+  // ── Task 2: Deep review scrape ────────────────────────────────────────────
+  const { reviews, reviewSummary } = await scrapeReviews(page, cfg.scraper.enrichMaxReviews);
+
+  // ── Task 1: Full photo tab (URL capture, no downloads) ───────────────────
+  const allPhotoUrls = await scrapePhotosTabEnriched(page, core.heroPhotoUrls || []);
+
+  return {
+    ...core,
+    deepAmenities,
+    extraAttributes,
+    reviews,
+    reviewSummary,
+    allPhotoUrls,
+    scrapedAt: new Date(),
+  };
+}
+
 // ── Scrape About Tab (Detailed Amenities & Accessibility) ──────────────────
 async function scrapeAboutTab(page) {
   try {
@@ -437,9 +603,56 @@ async function scrapeAboutTab(page) {
   }
 }
 
-// ── Scrape reviews (up to maxReviews per gym) ─────────────────────────────────
-// Phase 4: maxReviews is now a parameter (30 for standard, 150 for deep, 0 for fast)
+// ── Task 4: Exhaustive About Tab — all sections incl. unmapped ─────────────
+async function scrapeAboutTabExhaustive(page) {
+  const result = { amenities: [], extraAttributes: {} };
+  try {
+    const tab = page.locator('button[aria-label*="About" i], button:has-text("About")').first();
+    if (!await tab.isVisible({ timeout: 1500 }).catch(() => false)) return result;
+    await tab.click();
+    await sleep(800, 1400);
 
+    return await page.evaluate(() => {
+      const KNOWN_SECTIONS = new Set([
+        'amenities', 'offerings', 'accessibility', 'service options', 'highlights',
+        'planning', 'payments', 'children', 'crowd', 'health & safety',
+      ]);
+      const result = { amenities: [], extraAttributes: {} };
+
+      // Each section is a heading + list of items
+      const sections = [...document.querySelectorAll('.iP2t7d, .E0DTEd, .OEuBte, .section-result-category')];
+      let currentSection = null;
+
+      // Walk the DOM tree for section headers + their items
+      const allEls = [...document.querySelectorAll('.LTs0Rc, .hpLkke, .E0DTEd li, .kx8XBd, .iP2t7d, .RCZH2e')];
+      for (const el of allEls) {
+        // Section heading detection
+        if (el.tagName === 'H2' || el.tagName === 'H3' || el.classList.contains('LTs0Rc')) {
+          currentSection = el.textContent?.trim().toLowerCase() || null;
+          continue;
+        }
+        const text = el.textContent?.trim() || el.getAttribute('aria-label');
+        if (!text) continue;
+
+        if (!currentSection || KNOWN_SECTIONS.has(currentSection)) {
+          result.amenities.push(text);
+        } else {
+          // Store in extraAttributes for unmapped sections
+          if (!result.extraAttributes[currentSection]) result.extraAttributes[currentSection] = [];
+          result.extraAttributes[currentSection].push(text);
+        }
+      }
+
+      // De-dupe
+      result.amenities = [...new Set(result.amenities)];
+      return result;
+    });
+  } catch (err) {
+    return result;
+  }
+}
+
+// ── Task 2: Enhanced review scraper (enrichment fields) ─────────────────────
 async function scrapeReviews(page, maxReviews = 30) {
   const reviews = [];
   let reviewSummary = null;
@@ -447,13 +660,11 @@ async function scrapeReviews(page, maxReviews = 30) {
   if (maxReviews === 0) return { reviews, reviewSummary };
 
   try {
-    // Click Reviews tab
     const tab = page.locator('button[aria-label*="reviews" i], button:has-text("Reviews")').first();
     if (!await tab.isVisible({ timeout: 2000 }).catch(() => false)) return { reviews, reviewSummary };
     await tab.click();
     await sleep(1200, 2000);
 
-    // Extract AI Review Summary or keywords
     try {
       reviewSummary = await page.evaluate(() => {
         const aiSummary = document.querySelector('.P_Pval, .OA1nbd, .d7Bzhf')?.textContent?.trim();
@@ -462,7 +673,6 @@ async function scrapeReviews(page, maxReviews = 30) {
       });
     } catch (_) {}
 
-    // Sort by Newest
     try {
       const sortBtn = page.locator('button[aria-label*="Sort" i]').first();
       if (await sortBtn.isVisible({ timeout: 1500 })) {
@@ -477,29 +687,47 @@ async function scrapeReviews(page, maxReviews = 30) {
     let lastCount = 0; let noNew = 0;
 
     while (reviews.length < maxReviews) {
-      // Expand truncated review text
       for (const btn of await page.locator('button.w8nwRe').all()) {
         try { await btn.click(); } catch (_) {}
       }
 
-      // Parse visible review cards
       for (const card of await page.locator('.jftiEf, .MyEned').all()) {
         try {
           const r = await card.evaluate(el => {
-            const t = s => el.querySelector(s)?.textContent?.trim() || null;
-            const g = (s, a) => el.querySelector(s)?.getAttribute(a) || null;
+            const t  = s => el.querySelector(s)?.textContent?.trim() || null;
+            const g  = (s, a) => el.querySelector(s)?.getAttribute(a) || null;
             const ratingLabel = g('.kvMYJc', 'aria-label') || '';
             const ratingNum   = parseInt(ratingLabel.replace(/[^0-9]/g, '') || '0', 10) || null;
+
+            // Task 2: Local Guide level
+            const lgText = t('.RfnDt, .QMUNef');
+            const lgMatch = lgText?.match(/Local Guide.*Level (\d+)/i);
+            const reviewerLocalGuideLevel = lgMatch ? parseInt(lgMatch[1], 10) : null;
+
+            // Task 2: Review photos (URLs only, no download)
+            const reviewPhotos = [...el.querySelectorAll('.KtCyie img, .Tya61d img')]
+              .map(img => img.src || img.dataset?.src)
+              .filter(src => src?.startsWith('http'))
+              .map(src => src.replace(/=w\d+-h\d+[^&]*/, '=w800-h600'));
+
+            // Task 2: Owner reply with respondedAt
+            const ownerReplyText      = t('.CDe7pd');
+            const ownerRespondedAtRaw = t('.n5VP6b');
+
             return {
               reviewId:    el.getAttribute('data-review-id') || null,
               authorName:  t('.d4r55') || t('.GHT2ce'),
               authorUrl:   g('.al6Kxe', 'href'),
               authorAvatar:g('.NBa7we img', 'src'),
+              reviewerLocalGuideLevel,
               rating:      ratingNum,
               text:        t('.wiI7pd') || t('.MyEned span'),
               publishedAt: t('.rsqaWe') || t('.xRkPPb span'),
               likes:       parseInt(t('.GBkF3d') || '0', 10) || 0,
-              ownerReply:  { text: t('.CDe7pd'), publishedAt: t('.n5VP6b') },
+              reviewPhotos,
+              ownerReply:  ownerReplyText
+                ? { text: ownerReplyText, respondedAt: ownerRespondedAtRaw }
+                : null,
             };
           });
           if (r.authorName && !reviews.some(x => x.reviewId && x.reviewId === r.reviewId)) {
@@ -520,6 +748,12 @@ async function scrapeReviews(page, maxReviews = 30) {
     logger.warn(`Review scraping partial: ${err.message}`);
   }
   return { reviews, reviewSummary };
+}
+
+// ── Task 1: Enriched photo tab — captures up to maxPhotos, no size cap ────────
+async function scrapePhotosTabEnriched(page, existing = []) {
+  const maxPhotos = cfg.scraper.enrichMaxPhotos;
+  return scrapePhotosTab(page, existing, maxPhotos);
 }
 
 // ── Scrape Photos tab (up to maxPhotos) ───────────────────────────────────────
@@ -656,7 +890,7 @@ async function scrapeSelective(page, url, sections = ['all']) {
 }
 
 module.exports = {
-  BrowserManager, searchGymsInCity, scrapeGymDetail, scrapeSelective,
-  scrapeAboutTab, scrapeReviews, scrapePhotosTab,
+  BrowserManager, searchGymsInCity, scrapeGymDetail, scrapeEnrichmentDetail, scrapeSelective,
+  scrapeAboutTab, scrapeAboutTabExhaustive, scrapeReviews, scrapePhotosTab, scrapePhotosTabEnriched,
   FITNESS_CATEGORIES, isBlocked,
 };

@@ -44,6 +44,13 @@ const mediaQueue      = makeQueue('atlas06-media', {
   removeOnComplete: 100,
   removeOnFail:     50,
 });
+// Enrichment queue — targeted per-gym enrichment jobs (Tasks 1-5)
+const enrichmentQueue = makeQueue('atlas06-enrichment', {
+  attempts:         2,
+  backoff:          { type: 'exponential', delay: 8000 },
+  removeOnComplete: 200,
+  removeOnFail:     100,
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -108,6 +115,32 @@ async function addMediaJob(gymId, slug, photoUrls) {
     { jobId: `media:${gymId}`, removeOnComplete: true }
   );
   return job;
+}
+
+/**
+ * Enqueue a gym-enrichment job.
+ * Input: { gymId, placeUrl, cityName }
+ * Priority 2 — below active city-crawls (priority 1).
+ */
+async function addEnrichmentJob(gymId, placeUrl, cityName) {
+  const jobId = `enrich:${gymId}`;
+  const job = await enrichmentQueue.add(
+    'gym-enrichment',
+    { type: 'enrichment', gymId: String(gymId), input: { gymId: String(gymId), placeUrl, cityName } },
+    { jobId, priority: 2, removeOnComplete: true }
+  );
+  logger.info(`📥 Queued enrichment: ${cityName || gymId} gym ${gymId} (BullMQ #${job.id})`);
+  return job;
+}
+
+async function getEnrichmentQueueStats() {
+  const [waiting, active, completed, failed] = await Promise.all([
+    enrichmentQueue.getWaitingCount(),
+    enrichmentQueue.getActiveCount(),
+    enrichmentQueue.getCompletedCount(),
+    enrichmentQueue.getFailedCount(),
+  ]);
+  return { waiting, active, completed, failed };
 }
 
 async function getMediaQueueStats() {
@@ -257,14 +290,17 @@ module.exports = {
   crawlQueue,
   chainCrawlQueue,
   mediaQueue,
+  enrichmentQueue,
   addCityJob,
   addGymNameJob,
   addChainJob,
   addMediaJob,
+  addEnrichmentJob,
   addBatchScrapeJob,
   getQueueStats,
   getChainQueueStats,
   getMediaQueueStats,
+  getEnrichmentQueueStats,
   getQueueJobStatus,
   getBullJobStatus: getQueueJobStatus,
   clearCrawlQueue,

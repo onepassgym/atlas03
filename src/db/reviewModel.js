@@ -42,11 +42,13 @@ const ReviewSchema = new mongoose.Schema(
 
     authorName:   String,
     authorUrl:    String,
-    authorAvatar: String,
+    authorAvatar: String,   // reviewer avatar URL (no download)
+    reviewerLocalGuideLevel: { type: Number, default: null },  // null = not a local guide
 
     rating:       { type: Number, min: 1, max: 5 },
     text:         String,
-    photos:       [String],
+    photos:       [String],         // legacy — kept for compat
+    reviewPhotos: [String],         // enrichment: URL-only photo list, sourceType=review_photo
 
     // Keep the raw string Google gives us (e.g. "a month ago")
     publishedAtRaw: String,
@@ -57,12 +59,13 @@ const ReviewSchema = new mongoose.Schema(
     likes:        { type: Number, default: 0 },
 
     ownerReply: {
-      text:        String,
-      publishedAt: Date,
+      text:           String,
+      respondedAtRaw: String,     // raw Google string e.g. "2 months ago"
+      publishedAt:    Date,
     },
   },
   {
-    timestamps: { createdAt: 'createdAt', updatedAt: false },
+    timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },  // add updatedAt for ownerReply tracking
     collection: 'gym_reviews',
     autoIndex: false,
   }
@@ -92,23 +95,83 @@ function buildReviewDocs(gymId, rawReviews = []) {
     authorName:   r.authorName || r.author || null,
     authorUrl:    r.authorUrl   || null,
     authorAvatar: r.authorAvatar || r.avatar || null,
+    reviewerLocalGuideLevel: r.reviewerLocalGuideLevel ?? null,
     rating:       r.rating      || null,
     text:         r.text        || r.body  || null,
     photos:       Array.isArray(r.photos) ? r.photos : [],
+    reviewPhotos: Array.isArray(r.reviewPhotos) ? r.reviewPhotos : [],
     publishedAtRaw: r.publishedAt || r.publishedAtRaw || null,
     publishedAt:  parseRelativeDate(r.publishedAt || r.publishedAtRaw),
     likes:        r.likes || 0,
-    ownerReply: r.ownerReply
+    ownerReply: r.ownerReply?.text
       ? {
-          text:        r.ownerReply.text || null,
-          publishedAt: r.ownerReply.publishedAt
-            ? parseRelativeDate(r.ownerReply.publishedAt)
+          text:           r.ownerReply.text || null,
+          respondedAtRaw: r.ownerReply.respondedAt || r.ownerReply.publishedAt || null,
+          publishedAt:    r.ownerReply.respondedAt || r.ownerReply.publishedAt
+            ? parseRelativeDate(r.ownerReply.respondedAt || r.ownerReply.publishedAt)
             : null,
         }
       : undefined,
   }));
 }
 
+/**
+ * Merge updated review fields into an existing review document.
+ * Used by enrichment pass to update ownerReply if it changed.
+ *
+ * @param {ObjectId} gymId
+ * @param {Array}    rawReviews
+ * @param {Object}   changeLogWriter — function(gymId, diffs, now) for logging ownerResponse changes
+ * @returns {{ updated: number }}
+ */
+async function mergeReviewEnrichment(gymId, rawReviews = [], changeLogWriter) {
+  if (!rawReviews.length) return { updated: 0 };
+  let updated = 0;
+  const now = new Date();
+
+  for (const r of rawReviews) {
+    const id = r.reviewId || r.id;
+    if (!id) continue;
+
+    const existing = await Review.findOne({ reviewId: id }).lean();
+    if (!existing) continue;
+
+    const updates = {};
+    // Update ownerReply if text changed
+    const newReplyText = r.ownerReply?.text || null;
+    const oldReplyText = existing.ownerReply?.text || null;
+    if (newReplyText && newReplyText !== oldReplyText) {
+      updates.ownerReply = {
+        text:           newReplyText,
+        respondedAtRaw: r.ownerReply?.respondedAt || r.ownerReply?.publishedAt || null,
+        publishedAt:    parseRelativeDate(r.ownerReply?.respondedAt || r.ownerReply?.publishedAt),
+      };
+      // Log the owner response change
+      if (changeLogWriter) {
+        await changeLogWriter(gymId, [{
+          field:    'ownerResponse',
+          oldValue: oldReplyText,
+          newValue: newReplyText,
+        }], now);
+      }
+    }
+    // Update reviewPhotos if new ones appeared
+    if (Array.isArray(r.reviewPhotos) && r.reviewPhotos.length > (existing.reviewPhotos?.length || 0)) {
+      updates.reviewPhotos = r.reviewPhotos;
+    }
+    // Update local guide level if newly available
+    if (r.reviewerLocalGuideLevel != null && existing.reviewerLocalGuideLevel == null) {
+      updates.reviewerLocalGuideLevel = r.reviewerLocalGuideLevel;
+    }
+
+    if (Object.keys(updates).length) {
+      await Review.updateOne({ reviewId: id }, { $set: updates });
+      updated++;
+    }
+  }
+  return { updated };
+}
+
 const Review = mongoose.model('Review', ReviewSchema);
 
-module.exports = { Review, buildReviewDocs, parseRelativeDate };
+module.exports = { Review, buildReviewDocs, parseRelativeDate, mergeReviewEnrichment };
