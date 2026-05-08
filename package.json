@@ -23,7 +23,8 @@
     "dashboard:build": "cd dashboard && npm run build",
     "dashboard:install": "cd dashboard && npm install",
     "dev:all": "concurrently -c \"cyan,magenta,yellow,green,blue\" \"npm run dev\" \"npm run dev:worker\" \"npm run dev:worker:enrich\" \"npm run dev:worker:chain\" \"npm run dashboard:dev\"",
-    "migrate:opgid": "node migration/index.js --run=addOpgIds"
+    "migrate:opgid": "node migration/index.js --run=addOpgIds",
+    "migrate:opgid:prod": "NODE_ENV=production node migration/index.js --run=addOpgIds"
   },
   "dependencies": {
     "axios": "1.7.2",
